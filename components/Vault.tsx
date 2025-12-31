@@ -211,6 +211,7 @@ const Vault: React.FC = () => {
             
             <div className="flex-1 overflow-hidden relative">
               <RichEditor
+                key={activeNote.id}
                 content={activeNote.content}
                 onChange={(content) => updateNote(activeNote.id, { content })}
               />
