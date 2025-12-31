@@ -1,0 +1,7 @@
+{
+  "name": "Copy of EchoTrack",
+  "description": "A minimalist, offline-first consistency engine and deep-note vault designed for peak discipline.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
