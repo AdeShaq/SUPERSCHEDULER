@@ -34,29 +34,39 @@ export const AudioService = {
      if (!AudioService.ctx) AudioService.init();
      const ctx = AudioService.ctx!;
 
+     // Ensure context is running (it might be suspended by browser policy)
+     if (ctx.state === 'suspended') {
+         ctx.resume();
+     }
+
      const now = ctx.currentTime;
      const osc = ctx.createOscillator();
      const gain = ctx.createGain();
 
      osc.type = 'sawtooth';
-     // Siren effect
+     // Siren effect - Louder and more urgent
      osc.frequency.setValueAtTime(600, now);
-     osc.frequency.linearRampToValueAtTime(800, now + 0.3);
-     osc.frequency.linearRampToValueAtTime(600, now + 0.6);
+     osc.frequency.linearRampToValueAtTime(900, now + 0.4);
+     osc.frequency.linearRampToValueAtTime(600, now + 0.8);
 
      gain.gain.setValueAtTime(0, now);
-     gain.gain.linearRampToValueAtTime(0.3, now + 0.1);
-     gain.gain.setValueAtTime(0.3, now + 0.5);
-     gain.gain.linearRampToValueAtTime(0, now + 0.6);
+     gain.gain.linearRampToValueAtTime(0.5, now + 0.1); // Increased gain
+     gain.gain.setValueAtTime(0.5, now + 0.6);
+     gain.gain.linearRampToValueAtTime(0, now + 0.8);
 
      osc.connect(gain);
      gain.connect(ctx.destination);
      osc.start();
-     osc.stop(now + 0.6);
+     osc.stop(now + 0.8);
   },
 
   startAlarmLoop: () => {
       if (AudioService.alarmInterval) return; // Already running
+
+      if (AudioService.ctx && AudioService.ctx.state === 'suspended') {
+          AudioService.ctx.resume();
+      }
+
       AudioService.playAlarmPulse();
       AudioService.alarmInterval = setInterval(() => {
           AudioService.playAlarmPulse();

@@ -86,7 +86,7 @@ const Analytics: React.FC = () => {
       <h1 className="text-3xl md:text-4xl font-bold tracking-tighter text-white uppercase mb-8 drop-shadow-lg">Analytics</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="p-6 glass-panel bg-accent/10 rounded-2xl border-accent/20">
+        <div className="p-6 glass-panel bg-accent/5 border border-accent/20 rounded-2xl">
           <p className="text-[10px] font-mono uppercase text-accent mb-2 tracking-widest">Total Actions</p>
           <p className="text-5xl font-bold tracking-tighter text-white drop-shadow-md">{totalCompletions}</p>
         </div>
