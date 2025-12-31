@@ -3,6 +3,7 @@ import { Plus, X, Check, Zap, Clock, Trash2, Bell } from 'lucide-react';
 import { Task, RecurrenceConfig, ScheduleGroup } from '../types';
 import { StorageService } from '../services/storage';
 import { AudioService } from '../services/audio';
+import TimePicker from './TimePicker';
 
 interface ScheduleProps {
   onAnalyze: (tasks: Task[]) => void;
@@ -245,12 +246,7 @@ const Schedule: React.FC<ScheduleProps> = ({ onAnalyze }) => {
                   
                   <div className="flex-1">
                      <label className="text-[10px] font-mono uppercase text-accent block mb-3">Alarm Time (Optional)</label>
-                     <input 
-                        type="time"
-                        value={taskTime}
-                        onChange={(e) => setTaskTime(e.target.value)}
-                        className="bg-black/30 border border-white/10 text-white p-2.5 rounded-lg w-full font-mono text-sm focus:border-accent outline-none"
-                     />
+                     <TimePicker value={taskTime} onChange={setTaskTime} />
                   </div>
                 </div>
 

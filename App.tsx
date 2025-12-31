@@ -3,6 +3,7 @@ import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock
 import Schedule from './components/Schedule';
 import Vault from './components/Vault';
 import Analytics from './components/Analytics';
+import Onboarding from './components/Onboarding';
 import { ViewState, Task } from './types';
 import { AudioService } from './services/audio';
 import { GeminiService } from './services/geminiService';
@@ -15,6 +16,8 @@ const App: React.FC = () => {
   const [nextTaskName, setNextTaskName] = useState<string | null>(null);
   const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   
   const lastAlarmMinute = useRef<string | null>(null);
   const audioContextInitialized = useRef<boolean>(false);
@@ -23,8 +26,17 @@ const App: React.FC = () => {
   const touchStart = useRef<number | null>(null);
   const touchEnd = useRef<number | null>(null);
 
-  // Initialize Audio & Permissions
+  // Initialize Audio & Permissions & Loading/Onboarding
   useEffect(() => {
+    // Simulate fast loading
+    setTimeout(() => {
+        const hasOnboarded = localStorage.getItem('echoTrack_onboarded');
+        if (!hasOnboarded) {
+            setShowOnboarding(true);
+        }
+        setIsLoading(false);
+    }, 1500);
+
     const initServices = () => {
         if (!audioContextInitialized.current) {
             AudioService.init();
@@ -166,6 +178,11 @@ const App: React.FC = () => {
     }
   };
 
+  const handleOnboardingComplete = () => {
+      localStorage.setItem('echoTrack_onboarded', 'true');
+      setShowOnboarding(false);
+  };
+
   const NavItem = ({ viewTarget, icon: Icon, label }: { viewTarget: ViewState, icon: any, label: string }) => (
     <button
       onClick={() => setView(viewTarget)}
@@ -179,6 +196,16 @@ const App: React.FC = () => {
     </button>
   );
 
+  if (isLoading) {
+      return (
+          <div className="h-screen w-screen bg-black flex flex-col items-center justify-center">
+              <div className="w-16 h-16 bg-accent rounded-full animate-pulse shadow-[0_0_50px_rgba(16,185,129,0.5)] mb-8"></div>
+              <h1 className="text-3xl font-bold tracking-tighter text-white uppercase animate-fade-in">EchoTrack</h1>
+              <p className="text-xs font-mono text-accent mt-2 tracking-widest uppercase animate-pulse">Initializing System...</p>
+          </div>
+      );
+  }
+
   return (
     <div 
         className="flex flex-col md:flex-row h-screen w-screen font-sans overflow-hidden"
@@ -186,7 +213,8 @@ const App: React.FC = () => {
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
     >
-      
+      {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+
       {/* GLOBAL ALARM OVERLAY */}
       {activeAlarmTask && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center animate-pulse border-[20px] border-red-900/50">
