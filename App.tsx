@@ -14,6 +14,7 @@ const App: React.FC = () => {
   const [nextTaskCountdown, setNextTaskCountdown] = useState<string | null>(null);
   const [nextTaskName, setNextTaskName] = useState<string | null>(null);
   const [activeAlarmTask, setActiveAlarmTask] = useState<Task | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   
   const lastAlarmMinute = useRef<string | null>(null);
   const audioContextInitialized = useRef<boolean>(false);
@@ -219,7 +220,9 @@ const App: React.FC = () => {
           <NavItem viewTarget={ViewState.VAULT} icon={FileText} label="Vault" />
         </div>
         <div className="hidden md:flex items-center justify-center pb-8">
-           <Settings size={20} className="text-gray-600 hover:text-white cursor-pointer transition-colors"/>
+           <button onClick={() => setShowSettings(true)} className="text-gray-600 hover:text-white cursor-pointer transition-colors">
+             <Settings size={20} />
+           </button>
         </div>
       </nav>
 
@@ -250,6 +253,61 @@ const App: React.FC = () => {
                 {view === ViewState.VAULT && <Vault />}
             </div>
         </div>
+
+        {/* Settings Modal */}
+        {showSettings && (
+            <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-center justify-center p-6 animate-fade-in" onTouchStart={e => e.stopPropagation()}>
+                <div className="glass-panel max-w-md w-full rounded-2xl p-6 md:p-8 shadow-2xl relative border border-white/20">
+                    <button
+                        onClick={() => setShowSettings(false)}
+                        className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                    >
+                        <XCircle size={24} />
+                    </button>
+
+                    <div className="flex items-center gap-3 mb-6 text-white">
+                        <Settings size={20} />
+                        <h2 className="text-lg font-bold uppercase tracking-widest">System Settings</h2>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <h3 className="text-xs font-mono text-muted uppercase mb-3">Diagnostics</h3>
+                            <div className="grid grid-cols-1 gap-3">
+                                <button
+                                    onClick={() => {
+                                        AudioService.startAlarmLoop();
+                                        setTimeout(() => AudioService.stopAlarmLoop(), 5000);
+                                    }}
+                                    className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40"
+                                >
+                                    <Bell size={16} /> Test Alarm Siren (5s)
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (Notification.permission === "granted") {
+                                            new Notification("EchoTrack TEST", {
+                                                body: "System notification channel active.",
+                                                icon: '/icon.png'
+                                            });
+                                        } else {
+                                            Notification.requestPermission();
+                                        }
+                                    }}
+                                    className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-blue-400 hover:text-blue-300 border-blue-500/20 hover:border-blue-500/40"
+                                >
+                                    <Terminal size={16} /> Test Browser Notification
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 pt-4 border-t border-white/10">
+                         <p className="text-[10px] text-center text-muted font-mono">EchoTrack System v1.1</p>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {/* Gemini Result Modal */}
         {geminiResult && (

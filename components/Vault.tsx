@@ -113,9 +113,9 @@ const Vault: React.FC = () => {
       <div className={`
         ${selectedNoteId ? 'hidden md:flex' : 'flex'}
         w-full md:w-80
-        flex-col border-r border-border transition-all duration-300 glass-panel md:rounded-l-2xl my-2 ml-2
+        flex-col border-r border-white/10 transition-all duration-300 glass-panel md:rounded-l-2xl my-2 ml-2
       `}>
-        <div className="p-4 flex items-center justify-between border-b border-border bg-white/5">
+        <div className="p-4 flex items-center justify-between border-b border-white/10 bg-white/5">
           <h2 className="font-bold uppercase tracking-wider text-xs text-accent">The Vault</h2>
           <button onClick={createNote} className="p-2 hover:bg-accent/20 text-accent rounded-full transition-colors">
             <Plus size={18} />
@@ -143,7 +143,7 @@ const Vault: React.FC = () => {
                         transform: swipeNoteId === note.id ? `translateX(${swipeOffset}px)` : 'translateX(0)',
                         transition: swipeNoteId === note.id ? 'none' : 'transform 0.3s ease-out'
                     }}
-                    className={`relative z-10 p-5 cursor-pointer border-b border-border hover:bg-white/5 transition-colors backdrop-blur-md bg-background/50 ${selectedNoteId === note.id ? 'bg-white/10 border-l-2 border-l-accent' : 'border-l-2 border-l-transparent'}`}
+                    className={`relative z-10 p-5 cursor-pointer border-b border-white/10 hover:bg-white/5 transition-colors backdrop-blur-md bg-transparent ${selectedNoteId === note.id ? 'bg-white/10 border-l-2 border-l-accent' : 'border-l-2 border-l-transparent'}`}
                   >
                     <h3 className={`font-bold text-sm truncate mb-1 transition-colors ${selectedNoteId === note.id ? 'text-white' : 'text-gray-400 group-hover:text-gray-200'}`}>
                       {note.title || 'Untitled'}
@@ -159,7 +159,7 @@ const Vault: React.FC = () => {
       </div>
 
       {/* Main Editor Area */}
-      <div className={`flex-1 flex flex-col h-full relative animate-in fade-in ${!selectedNoteId ? 'hidden md:flex' : 'flex'} m-2 glass-panel md:rounded-r-2xl`}>
+      <div className={`flex-1 flex flex-col h-full relative animate-in fade-in ${!selectedNoteId ? 'hidden md:flex' : 'flex'} m-2 glass-panel md:rounded-r-2xl border-l-0`}>
         {!activeNote ? (
           <div className="flex-1 flex flex-col items-center justify-center text-muted font-mono uppercase tracking-widest text-xs opacity-50">
             <BrainCircuit size={48} className="mb-4 stroke-1 text-accent opacity-50"/>
@@ -167,7 +167,7 @@ const Vault: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="h-16 border-b border-border flex items-center justify-between px-4 bg-white/5 backdrop-blur-xl sticky top-0 z-20 shrink-0 gap-2 rounded-t-2xl">
+            <div className="h-16 border-b border-white/10 flex items-center justify-between px-4 bg-white/5 backdrop-blur-xl sticky top-0 z-20 shrink-0 gap-2 rounded-t-2xl">
                <div className="flex items-center gap-3 flex-1 min-w-0">
                  <button onClick={() => setSelectedNoteId(null)} className="md:hidden p-2 -ml-2 text-muted hover:text-white">
                     <ArrowLeft size={20} />
@@ -193,7 +193,7 @@ const Vault: React.FC = () => {
                         <span className="hidden sm:inline">AI Summary</span>
                     </button>
                     {showAiTooltip && (
-                        <div className="absolute top-full right-0 mt-2 w-48 p-2 bg-black border border-border rounded text-[10px] text-gray-300 z-50 shadow-xl">
+                        <div className="absolute top-full right-0 mt-2 w-48 p-2 bg-black border border-white/10 rounded text-[10px] text-gray-300 z-50 shadow-xl">
                             Auto-summarize this note using Gemini AI.
                         </div>
                     )}
