@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, BarChart2, FileText, Settings, XCircle, Terminal, Bell, Clock, AlertOctagon } from 'lucide-react';
+import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock, AlertOctagon } from 'lucide-react';
 import Schedule from './components/Schedule';
 import Vault from './components/Vault';
 import Analytics from './components/Analytics';
@@ -262,7 +262,7 @@ const App: React.FC = () => {
                         onClick={() => setShowSettings(false)}
                         className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                     >
-                        <XCircle size={24} />
+                        <CircleX size={24} />
                     </button>
 
                     <div className="flex items-center gap-3 mb-6 text-white">
@@ -317,7 +317,7 @@ const App: React.FC = () => {
                 onClick={() => setGeminiResult(null)}
                 className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
               >
-                <XCircle size={24} />
+                <CircleX size={24} />
               </button>
               
               <div className="flex items-center gap-3 mb-6 text-accent">
