@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Check, Zap, Clock, Trash2, Bell } from 'lucide-react';
+import { Plus, X, Check, Zap, Clock, Trash2, Bell, Settings } from 'lucide-react';
 import { Task, RecurrenceConfig, ScheduleGroup } from '../types';
 import { StorageService } from '../services/storage';
 import { AudioService } from '../services/audio';
@@ -7,11 +7,12 @@ import TimePicker from './TimePicker';
 
 interface ScheduleProps {
   onAnalyze: (tasks: Task[]) => void;
+  onOpenSettings: () => void;
 }
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const Schedule: React.FC<ScheduleProps> = ({ onAnalyze }) => {
+const Schedule: React.FC<ScheduleProps> = ({ onAnalyze, onOpenSettings }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<ScheduleGroup[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string>('default');
@@ -157,6 +158,13 @@ const Schedule: React.FC<ScheduleProps> = ({ onAnalyze }) => {
           </p>
         </div>
         <div className="flex gap-2">
+             <button
+              onClick={onOpenSettings}
+              className="glass-button w-8 h-8 flex items-center justify-center text-white hover:text-accent transition-all rounded-lg"
+              title="Settings"
+            >
+              <Settings size={16} />
+            </button>
              <button
               onClick={() => onAnalyze(tasks)}
               className="glass-button px-4 py-2 text-white font-mono uppercase hover:text-accent transition-all text-[10px] tracking-widest rounded-lg"

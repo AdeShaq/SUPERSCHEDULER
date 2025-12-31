@@ -18,6 +18,13 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  const [settings, setSettings] = useState({
+      soundEnabled: localStorage.getItem('echoTrack_soundEnabled') !== 'false',
+      alarmsEnabled: localStorage.getItem('echoTrack_alarmsEnabled') !== 'false',
+      notificationsEnabled: localStorage.getItem('echoTrack_notificationsEnabled') !== 'false',
+  });
   
   const lastAlarmMinute = useRef<string | null>(null);
   const audioContextInitialized = useRef<boolean>(false);
@@ -60,13 +67,14 @@ const App: React.FC = () => {
   useEffect(() => {
       const tick = () => {
           const now = new Date();
+          setCurrentTime(now);
           const currentTimeStr = now.toTimeString().slice(0, 5); // "HH:MM"
           const todayStr = now.toISOString().split('T')[0];
           
           const tasks = StorageService.getTasks();
           
           // 1. Check Alarms
-          if (lastAlarmMinute.current !== currentTimeStr) {
+          if (lastAlarmMinute.current !== currentTimeStr && settings.alarmsEnabled) {
               tasks.forEach(task => {
                  if (task.time === currentTimeStr && !task.completedDates.includes(todayStr)) {
                      // Check Day Logic
@@ -78,9 +86,11 @@ const App: React.FC = () => {
                      if (isActiveDay && !activeAlarmTask) {
                          // TRIGGER ALARM
                          setActiveAlarmTask(task);
-                         AudioService.startAlarmLoop();
+                         if (settings.soundEnabled) {
+                             AudioService.startAlarmLoop();
+                         }
                          
-                         if (Notification.permission === "granted") {
+                         if (settings.notificationsEnabled && Notification.permission === "granted") {
                              new Notification("EchoTrack EXECUTE", {
                                  body: `PROTOCOL: ${task.title}`,
                                  requireInteraction: true, // Keep notification open
@@ -183,6 +193,17 @@ const App: React.FC = () => {
       setShowOnboarding(false);
   };
 
+  const toggleSetting = (key: keyof typeof settings) => {
+      const newValue = !settings[key];
+      const newSettings = { ...settings, [key]: newValue };
+      setSettings(newSettings);
+      localStorage.setItem(`echoTrack_${key}`, String(newValue));
+
+      if (key === 'notificationsEnabled' && newValue === true) {
+          Notification.requestPermission();
+      }
+  };
+
   const NavItem = ({ viewTarget, icon: Icon, label }: { viewTarget: ViewState, icon: any, label: string }) => (
     <button
       onClick={() => setView(viewTarget)}
@@ -248,35 +269,46 @@ const App: React.FC = () => {
           <NavItem viewTarget={ViewState.VAULT} icon={FileText} label="Vault" />
         </div>
         <div className="hidden md:flex items-center justify-center pb-8">
-           <button onClick={() => setShowSettings(true)} className="text-gray-600 hover:text-white cursor-pointer transition-colors">
-             <Settings size={20} />
-           </button>
+           {/* Settings moved to Schedule header per user request */}
         </div>
       </nav>
 
       {/* Main Content Area */}
       <main className="order-1 md:order-2 flex-1 h-full overflow-hidden relative flex flex-col">
         
-        {/* COUNTDOWN WIDGET (Top Bar) */}
-        {nextTaskCountdown && (
-            <div className="glass-panel border-b border-white/10 px-6 py-2 flex items-center justify-center md:justify-between z-10 shrink-0 m-2 rounded-xl">
-                <div className="flex items-center gap-2 text-white">
-                    <Clock size={14} className="animate-pulse text-accent"/>
-                    <span className="text-[10px] font-mono uppercase text-muted tracking-widest">Next Protocol:</span>
-                    <span className="text-xs font-bold uppercase text-accent drop-shadow-sm">{nextTaskName}</span>
-                </div>
-                <div className="font-mono text-xl font-bold tracking-tight text-white tabular-nums hidden md:block drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
-                    T-{nextTaskCountdown}
-                </div>
-                 <div className="font-mono text-sm font-bold tracking-tight text-white tabular-nums md:hidden ml-2">
-                    {nextTaskCountdown}
-                </div>
+        {/* TOP HEADER WITH CLOCK */}
+        <div className="glass-panel border-b border-white/10 px-6 py-3 flex items-center justify-between z-10 shrink-0 m-2 rounded-xl">
+            <div className="flex flex-col">
+                <span className="text-xs font-bold text-white tracking-widest uppercase">
+                    {currentTime.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </span>
+                <span className="text-xl font-mono font-bold text-accent tracking-tighter leading-none">
+                    {currentTime.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}
+                </span>
             </div>
-        )}
+
+            {nextTaskCountdown && (
+                <div className="flex flex-col items-end">
+                     <div className="flex items-center gap-2 text-white/70">
+                        <span className="text-[10px] font-mono uppercase tracking-widest">Next Protocol</span>
+                        <Clock size={12} className="text-accent animate-pulse"/>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold uppercase text-white truncate max-w-[100px]">{nextTaskName}</span>
+                        <span className="font-mono text-lg font-bold text-white tabular-nums">T-{nextTaskCountdown}</span>
+                    </div>
+                </div>
+            )}
+        </div>
 
         <div className="flex-1 overflow-hidden relative">
             <div key={view} className="h-full w-full animate-view-enter">
-                {view === ViewState.SCHEDULE && <Schedule onAnalyze={handleGeminiAnalysis} />}
+                {view === ViewState.SCHEDULE && (
+                    <Schedule
+                        onAnalyze={handleGeminiAnalysis}
+                        onOpenSettings={() => setShowSettings(true)}
+                    />
+                )}
                 {view === ViewState.ANALYTICS && <Analytics />}
                 {view === ViewState.VAULT && <Vault />}
             </div>
@@ -300,31 +332,70 @@ const App: React.FC = () => {
 
                     <div className="space-y-6">
                         <div>
+                            <h3 className="text-xs font-mono text-muted uppercase mb-3">Preferences</h3>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    <span className="text-sm font-bold text-white">Master Sound</span>
+                                    <button
+                                        onClick={() => toggleSetting('soundEnabled')}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${settings.soundEnabled ? 'bg-accent' : 'bg-white/10'}`}
+                                    >
+                                        <div className={`w-3 h-3 bg-black rounded-full absolute top-1 transition-all ${settings.soundEnabled ? 'left-6' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    <span className="text-sm font-bold text-white">Alarms</span>
+                                    <button
+                                        onClick={() => toggleSetting('alarmsEnabled')}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${settings.alarmsEnabled ? 'bg-accent' : 'bg-white/10'}`}
+                                    >
+                                        <div className={`w-3 h-3 bg-black rounded-full absolute top-1 transition-all ${settings.alarmsEnabled ? 'left-6' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    <span className="text-sm font-bold text-white">Notifications</span>
+                                    <button
+                                        onClick={() => toggleSetting('notificationsEnabled')}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${settings.notificationsEnabled ? 'bg-accent' : 'bg-white/10'}`}
+                                    >
+                                        <div className={`w-3 h-3 bg-black rounded-full absolute top-1 transition-all ${settings.notificationsEnabled ? 'left-6' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
                             <h3 className="text-xs font-mono text-muted uppercase mb-3">Diagnostics</h3>
                             <div className="grid grid-cols-1 gap-3">
                                 <button
                                     onClick={() => {
-                                        AudioService.startAlarmLoop();
-                                        setTimeout(() => AudioService.stopAlarmLoop(), 5000);
+                                        if (settings.soundEnabled) {
+                                            AudioService.startAlarmLoop();
+                                            setTimeout(() => AudioService.stopAlarmLoop(), 3000);
+                                        } else {
+                                            alert("Sound is disabled in settings.");
+                                        }
                                     }}
                                     className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-red-400 hover:text-red-300 border-red-500/20 hover:border-red-500/40"
                                 >
-                                    <Bell size={16} /> Test Alarm Siren (5s)
+                                    <Bell size={16} /> Test Siren (3s)
                                 </button>
                                 <button
                                     onClick={() => {
-                                        if (Notification.permission === "granted") {
+                                        if (settings.notificationsEnabled && Notification.permission === "granted") {
                                             new Notification("EchoTrack TEST", {
                                                 body: "System notification channel active.",
                                                 icon: '/icon.png'
                                             });
+                                        } else if (!settings.notificationsEnabled) {
+                                             alert("Notifications disabled in settings.");
                                         } else {
                                             Notification.requestPermission();
                                         }
                                     }}
                                     className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-blue-400 hover:text-blue-300 border-blue-500/20 hover:border-blue-500/40"
                                 >
-                                    <Terminal size={16} /> Test Browser Notification
+                                    <Terminal size={16} /> Test Notification
                                 </button>
                             </div>
                         </div>
