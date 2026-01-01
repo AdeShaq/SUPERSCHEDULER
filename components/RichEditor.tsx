@@ -10,10 +10,23 @@ interface RichEditorProps {
 const RichEditor: React.FC<RichEditorProps> = ({ content, onChange, readOnly }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isFirstRun = useRef(true);
 
   useEffect(() => {
+    // Initial mount population
+    if (isFirstRun.current) {
+        if (editorRef.current) {
+            editorRef.current.innerHTML = content;
+        }
+        isFirstRun.current = false;
+        return;
+    }
+
+    // Subsequent updates
     if (editorRef.current && editorRef.current.innerHTML !== content) {
-      if (Math.abs(editorRef.current.innerHTML.length - content.length) > 5) {
+      // Only update DOM if the editor is NOT focused (external update)
+      // OR if the content difference is significant (AI summary or external paste)
+      if (document.activeElement !== editorRef.current || Math.abs(editorRef.current.innerHTML.length - content.length) > 5) {
         editorRef.current.innerHTML = content;
       }
     }
@@ -86,7 +99,6 @@ const RichEditor: React.FC<RichEditorProps> = ({ content, onChange, readOnly }) 
         className="flex-1 p-4 md:p-6 editor-content outline-none overflow-y-auto text-base md:text-lg leading-relaxed text-gray-200"
         onInput={handleInput}
         spellCheck={false}
-        dangerouslySetInnerHTML={{ __html: content }}
         data-placeholder="Start typing..."
       />
     </div>
