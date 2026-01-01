@@ -1,10 +1,12 @@
-import { Task, Note, Folder, ScheduleGroup } from '../types';
+import { Task, Note, Folder, ScheduleGroup, SavingsGoal, SavingsLog } from '../types';
 
 const STORAGE_KEYS = {
   TASKS: 'echotrack_tasks',
   NOTES: 'echotrack_notes',
   FOLDERS: 'echotrack_folders',
   GROUPS: 'echotrack_groups',
+  SAVINGS_GOALS: 'echotrack_savings_goals',
+  SAVINGS_LOGS: 'echotrack_savings_logs',
 };
 
 export const StorageService = {
@@ -64,5 +66,31 @@ export const StorageService = {
 
   saveFolders: (folders: Folder[]) => {
     localStorage.setItem(STORAGE_KEYS.FOLDERS, JSON.stringify(folders));
+  },
+
+  getSavingsGoals: (): SavingsGoal[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SAVINGS_GOALS);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveSavingsGoals: (goals: SavingsGoal[]) => {
+    localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(goals));
+  },
+
+  getSavingsLogs: (): SavingsLog[] => {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SAVINGS_LOGS);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  saveSavingsLogs: (logs: SavingsLog[]) => {
+    localStorage.setItem(STORAGE_KEYS.SAVINGS_LOGS, JSON.stringify(logs));
   }
 };
