@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock, AlertOctagon } from 'lucide-react';
+import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock, AlertOctagon, Wallet } from 'lucide-react';
 import Schedule from './components/Schedule';
 import Vault from './components/Vault';
 import Analytics from './components/Analytics';
+import Savings from './components/Savings';
 import Onboarding from './components/Onboarding';
 import { ViewState, Task } from './types';
 import { AudioService } from './services/audio';
@@ -176,7 +177,7 @@ const App: React.FC = () => {
     const isLeftSwipe = distance > 50;
     const isRightSwipe = distance < -50;
 
-    const views = [ViewState.SCHEDULE, ViewState.ANALYTICS, ViewState.VAULT];
+    const views = [ViewState.SCHEDULE, ViewState.ANALYTICS, ViewState.VAULT, ViewState.SAVINGS];
     const currentIndex = views.indexOf(view);
 
     if (isLeftSwipe && currentIndex < views.length - 1) {
@@ -267,6 +268,7 @@ const App: React.FC = () => {
           <NavItem viewTarget={ViewState.SCHEDULE} icon={Calendar} label="Plan" />
           <NavItem viewTarget={ViewState.ANALYTICS} icon={BarChart2} label="Stats" />
           <NavItem viewTarget={ViewState.VAULT} icon={FileText} label="Vault" />
+          <NavItem viewTarget={ViewState.SAVINGS} icon={Wallet} label="Save" />
         </div>
         <div className="hidden md:flex items-center justify-center pb-8">
            {/* Settings moved to Schedule header per user request */}
@@ -311,6 +313,7 @@ const App: React.FC = () => {
                 )}
                 {view === ViewState.ANALYTICS && <Analytics />}
                 {view === ViewState.VAULT && <Vault />}
+                {view === ViewState.SAVINGS && <Savings />}
             </div>
         </div>
 
