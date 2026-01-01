@@ -5,6 +5,7 @@ import Vault from './components/Vault';
 import Analytics from './components/Analytics';
 import Finances from './components/Finances';
 import Onboarding from './components/Onboarding';
+import NeuralInput from './components/NeuralInput';
 import { ViewState, Task } from './types';
 import { AudioService } from './services/audio';
 import { GeminiService } from './services/geminiService';
@@ -26,6 +27,19 @@ const App: React.FC = () => {
         alarmsEnabled: localStorage.getItem('echoTrack_alarmsEnabled') !== 'false',
         notificationsEnabled: localStorage.getItem('echoTrack_notificationsEnabled') !== 'false',
     });
+
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [groups, setGroups] = useState<any[]>([]);
+
+    useEffect(() => {
+        setTasks(StorageService.getTasks());
+        setGroups(StorageService.getGroups());
+    }, []);
+
+    const saveTasksGlobally = (updatedTasks: Task[]) => {
+        setTasks(updatedTasks);
+        StorageService.saveTasks(updatedTasks);
+    };
 
     const lastAlarmMinute = useRef<string | null>(null);
     const audioContextInitialized = useRef<boolean>(false);
@@ -191,10 +205,31 @@ const App: React.FC = () => {
         setActiveAlarmTask(null);
     };
 
-    const handleGeminiAnalysis = async (tasks: Task[]) => {
+    const handleGeminiAnalysis = async (tasksToAnalyze: Task[]) => {
         setGeminiResult("Analyzing consistency matrix...");
-        const result = await GeminiService.analyzeSchedule(tasks);
+        const result = await GeminiService.analyzeSchedule(tasksToAnalyze);
         setGeminiResult(result);
+    };
+
+    const handleAiTask = (partialTasks: Partial<Task>[]) => {
+        const currentTasks = StorageService.getTasks(); // Always get fresh
+        const newTasks: Task[] = partialTasks.map((pt, index) => ({
+            id: (Date.now() + index).toString(),
+            title: pt.title || "New Protocol",
+            time: pt.time || "12:00",
+            groupId: 'default', // Fixed: Match Schedule's default activeGroupId
+            recurrence: pt.recurrence as any || { type: 'specific_days', daysOfWeek: [new Date().getDay()] },
+            completedDates: [],
+            streak: 0,
+            priority: pt.priority || 'normal',
+            createdAt: Date.now() + index
+        }));
+
+        const updatedTasks = [...currentTasks, ...newTasks];
+        saveTasksGlobally(updatedTasks);
+
+        // Visual feedback sound
+        if (settings.soundEnabled) AudioService.playNotificationSound();
     };
 
     const onTouchStart = (e: React.TouchEvent) => {
@@ -341,10 +376,15 @@ const App: React.FC = () => {
                 <div className="flex-1 overflow-hidden relative">
                     <div key={view} className="h-full w-full animate-view-enter">
                         {view === ViewState.SCHEDULE && (
-                            <Schedule
-                                onAnalyze={handleGeminiAnalysis}
-                                onOpenSettings={() => setShowSettings(true)}
-                            />
+                            <div className="h-full flex flex-col">
+                                <NeuralInput onTaskDetected={handleAiTask} />
+                                <Schedule
+                                    tasks={tasks} // Pass lifted state
+                                    onUpdateTasks={saveTasksGlobally} // Pass updater
+                                    onAnalyze={handleGeminiAnalysis}
+                                    onOpenSettings={() => setShowSettings(true)}
+                                />
+                            </div>
                         )}
                         {view === ViewState.ANALYTICS && <Analytics />}
                         {view === ViewState.FINANCES && <Finances />}
