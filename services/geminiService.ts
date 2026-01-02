@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { GoogleGenAI } from "@google/genai";
 
 const getAiClient = () => {
@@ -49,26 +50,49 @@ export const GeminiService = {
 
     try {
       const prompt = `
-        You are an advanced task parser. Extract task details from this command: "${command}".
-        If the command implies multiple steps or a schedule, break it down into multiple task objects.
-        Return ONLY a raw JSON ARRAY of objects (no markdown, no quotes around the block). 
-        Each object must have:
-        - title: string (the task action)
-        - time: string (HH:mm format, 24h. Assume today unless specified. If no time, use "12:00")
-        - priority: "normal" | "high" (keywords: urgent, asap, important = high)
-        - recurrence: "none" | "daily" | "weekly" | "monthly"
-        - specificDay: number (0-6, where 0=Sunday) if a specific day is mentioned (e.g. "every Monday").
+        You are an advanced AI agent for SuperScheduler.
+        Your goal is to RETURN AN ARRAY OF ACTIONS based on the user's command.
+
+        COMMAND: "${command}"
+
+        ACTIONS SUPPORTED: 'create', 'update', 'delete'.
+
+        INSTRUCTIONS:
+        1. Parse intent:
+           - "Add/Schedule/Remind me to..." -> 'create'
+           - "Change/Move/Reschedule/Rename..." -> 'update'
+           - "Delete/Remove/Cancel/Clear..." -> 'delete'
         
-        Example outputs:
-        "Buy milk" -> [{ "title": "Buy milk", "time": "12:00", "priority": "normal", "recurrence": "none" }]
-        "Gym at 6, Meeting at 9" -> [
-            { "title": "Gym", "time": "06:00", "priority": "normal" },
-            { "title": "Meeting", "time": "09:00", "priority": "normal" }
-        ]
+        2. 'create': Extract task details (title, time, recurrence).
+           - "Monday to Friday" -> recurrence: 'specific_days', specificDays: [1,2,3,4,5].
+        
+        3. 'update': Identify the target task.
+           - If user says "Change Gym to 8am", query="Gym", updates={time: "08:00"}.
+        
+        4. 'delete': Identify target.
+           - "Delete Gym" -> query="Gym".
+           - "Delete all completed" -> query="completed".
+
+        SCHEMA:
+        Array<
+          | { type: 'create', data: { title: string, time: string, priority: 'normal'|'high', recurrence: any, specificDays?: number[] } }
+          | { type: 'update', query: string, updates: { title?: string, time?: string, priority?: string, recurrence?: any } }
+          | { type: 'delete', query: string }
+        >
+
+        EXAMPLES:
+        Input: "New task Gym at 7am daily"
+        Output: [{ "type": "create", "data": { "title": "Gym", "time": "07:00", "priority": "normal", "recurrence": "daily" } }]
+
+        Input: "Change Gym to 9am"
+        Output: [{ "type": "update", "query": "Gym", "updates": { "time": "09:00" } }]
+
+        Input: "Delete the Yoga task"
+        Output: [{ "type": "delete", "query": "Yoga" }]
       `;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-1.5-pro',
         contents: prompt,
       });
 

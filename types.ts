@@ -22,6 +22,11 @@ export interface Task {
   createdAt: number;
 }
 
+export type AgentAction =
+  | { type: 'create'; data: Partial<Task> }
+  | { type: 'update'; targetId?: string; query?: string; updates: Partial<Task> }
+  | { type: 'delete'; targetId?: string; query?: string };
+
 export interface Note {
   id: string;
   title: string;

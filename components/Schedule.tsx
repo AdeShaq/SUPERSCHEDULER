@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Check, Zap, Clock, Trash2, Bell, Settings } from 'lucide-react';
+import { Plus, X, Check, Zap, Clock, Trash2, Bell, Settings, Pencil, GripVertical } from 'lucide-react';
 import { Task, RecurrenceConfig, ScheduleGroup } from '../types';
 import { StorageService } from '../services/storage';
 import { AudioService } from '../services/audio';
@@ -26,6 +26,8 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const [taskTime, setTaskTime] = useState<string>('');
   const [newGroupName, setNewGroupName] = useState('');
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -68,31 +70,97 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
     }
   };
 
-  const handleAddTask = () => {
+  const handleSaveTask = () => {
     if (!newTaskTitle.trim()) return;
+
     const recurrence: RecurrenceConfig = {
       type: recurrenceType,
       intervalDays: recurrenceType === 'interval' ? intervalDays : undefined,
       daysOfWeek: recurrenceType === 'specific_days' ? selectedDays : undefined
     };
-    const task: Task = {
-      id: Date.now().toString(),
-      title: newTaskTitle,
-      time: taskTime || undefined,
-      groupId: activeGroupId,
-      recurrence,
-      completedDates: [],
-      streak: 0,
-      priority: 'normal',
-      createdAt: Date.now()
-    };
-    saveTasks([task, ...tasks]);
+
+    if (editingTaskId) {
+      // Update existing task
+      const updatedTasks = tasks.map(t => {
+        if (t.id === editingTaskId) {
+          return {
+            ...t,
+            title: newTaskTitle,
+            time: taskTime || undefined,
+            recurrence
+          };
+        }
+        return t;
+      });
+      onUpdateTasks(updatedTasks);
+      setEditingTaskId(null);
+    } else {
+      // Create new task
+      const task: Task = {
+        id: Date.now().toString(),
+        title: newTaskTitle,
+        time: taskTime || undefined,
+        groupId: activeGroupId,
+        recurrence,
+        completedDates: [],
+        streak: 0,
+        priority: 'normal',
+        createdAt: Date.now()
+      };
+      onUpdateTasks([task, ...tasks]);
+    }
+
+    // Reset Form
     setNewTaskTitle('');
     setRecurrenceType('daily');
     setSelectedDays([]);
     setIntervalDays(2);
     setTaskTime('');
     setIsAddingTask(false);
+  };
+
+  const startEditing = (task: Task) => {
+    setNewTaskTitle(task.title);
+    setTaskTime(task.time || '');
+    setRecurrenceType(task.recurrence.type);
+    setIntervalDays(task.recurrence.intervalDays || 2);
+    setSelectedDays(task.recurrence.daysOfWeek || []);
+    setEditingTaskId(task.id);
+    setIsAddingTask(true);
+  };
+
+  // Drag & Drop Handlers
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.effectAllowed = 'move';
+    // Make translucent
+    (e.target as HTMLElement).style.opacity = '0.5';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary to allow dropping
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    (e.target as HTMLElement).style.opacity = '1';
+    setDraggedTaskId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetTaskId: string) => {
+    e.preventDefault();
+    if (!draggedTaskId || draggedTaskId === targetTaskId) return;
+
+    const draggedIndex = tasks.findIndex(t => t.id === draggedTaskId);
+    const targetIndex = tasks.findIndex(t => t.id === targetTaskId);
+
+    if (draggedIndex === -1 || targetIndex === -1) return;
+
+    const newTasks = [...tasks];
+    const [movedTask] = newTasks.splice(draggedIndex, 1);
+    newTasks.splice(targetIndex, 0, movedTask);
+
+    onUpdateTasks(newTasks);
   };
 
   const toggleDaySelection = (dayIndex: number) => {
@@ -175,7 +243,11 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
             Analyze
           </button>
           <button
-            onClick={() => setIsAddingTask(true)}
+            onClick={() => {
+              setEditingTaskId(null);
+              setNewTaskTitle('');
+              setIsAddingTask(true);
+            }}
             className="px-4 py-2 bg-accent text-black font-bold uppercase hover:bg-accent/90 transition-all text-[10px] tracking-widest rounded-lg flex items-center gap-1 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
           >
             <Plus size={14} strokeWidth={3} /> New
@@ -235,7 +307,7 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
               onChange={(e) => setNewTaskTitle(e.target.value)}
               autoFocus
             />
-            <button onClick={() => setIsAddingTask(false)} className="text-muted hover:text-white p-1"><X size={18} /></button>
+            <button onClick={() => { setIsAddingTask(false); setEditingTaskId(null); }} className="text-muted hover:text-white p-1"><X size={18} /></button>
           </div>
 
           <div className="space-y-6">
@@ -292,8 +364,8 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
               </div>
             )}
 
-            <button onClick={handleAddTask} className="w-full bg-accent text-black py-3.5 font-bold uppercase text-xs tracking-wider hover:bg-accent/90 transition-colors mt-4 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.2)]">
-              Initialize Protocol
+            <button onClick={handleSaveTask} className="w-full bg-accent text-black py-3.5 font-bold uppercase text-xs tracking-wider hover:bg-accent/90 transition-colors mt-4 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+              {editingTaskId ? 'Update Protocol' : 'Initialize Protocol'}
             </button>
           </div>
         </div>
@@ -314,25 +386,33 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
           return (
             <div
               key={task.id}
-              className={`group relative p-5 border transition-all duration-300 rounded-xl backdrop-blur-md ${isDone ? 'border-white/5 bg-white/5 opacity-50' : isDue ? 'border-accent/30 bg-accent-glow hover:bg-accent/10 hover:border-accent/50' : 'border-white/5 bg-black/20 opacity-40 hover:opacity-100'}`}
+              draggable="true"
+              onDragStart={(e) => handleDragStart(e, task.id)}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDrop={(e) => handleDrop(e, task.id)}
+              className={`group relative p-5 border transition-all duration-300 rounded-xl backdrop-blur-md cursor-grab active:cursor-grabbing ${isDone ? 'border-white/5 bg-white/5 opacity-50' : isDue ? 'border-accent/30 bg-accent-glow hover:bg-accent/10 hover:border-accent/50' : 'border-white/5 bg-black/20 opacity-40 hover:opacity-100 hover:border-white/10'}`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0 pr-4">
-                  <h3 className={`text-lg font-bold uppercase tracking-tight text-white truncate ${isDone ? 'line-through decoration-white/30 text-gray-400' : ''}`}>
-                    {task.title}
-                  </h3>
-                  <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                    <span className="text-[10px] font-mono bg-white/5 border border-white/10 text-gray-300 px-2 py-0.5 rounded-md uppercase whitespace-nowrap">
-                      {getRecurrenceLabel(task.recurrence)}
-                    </span>
-                    {task.time && (
-                      <span className="text-[10px] font-mono bg-white/5 border border-white/10 text-accent px-2 py-0.5 rounded-md uppercase whitespace-nowrap flex items-center gap-1">
-                        <Bell size={10} /> {task.time}
+                <div className="flex items-center gap-3">
+                  <GripVertical size={16} className="text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
+                  <div className="flex-1 min-w-0 pr-4">
+                    <h3 className={`text-lg font-bold uppercase tracking-tight text-white truncate ${isDone ? 'line-through decoration-white/30 text-gray-400' : ''}`}>
+                      {task.title}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                      <span className="text-[10px] font-mono bg-white/5 border border-white/10 text-gray-300 px-2 py-0.5 rounded-md uppercase whitespace-nowrap">
+                        {getRecurrenceLabel(task.recurrence)}
                       </span>
-                    )}
-                    <div className="flex items-center text-[10px] font-mono font-bold text-accent gap-1">
-                      <Zap size={12} fill="currentColor" />
-                      STREAK: {task.streak}
+                      {task.time && (
+                        <span className="text-[10px] font-mono bg-white/5 border border-white/10 text-accent px-2 py-0.5 rounded-md uppercase whitespace-nowrap flex items-center gap-1">
+                          <Bell size={10} /> {task.time}
+                        </span>
+                      )}
+                      <div className="flex items-center text-[10px] font-mono font-bold text-accent gap-1">
+                        <Zap size={12} fill="currentColor" />
+                        STREAK: {task.streak}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -346,6 +426,13 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
                       <Check size={20} strokeWidth={4} />
                     </button>
                   )}
+
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startEditing(task); }}
+                    className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <Pencil size={16} />
+                  </button>
 
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}

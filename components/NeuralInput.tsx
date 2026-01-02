@@ -4,7 +4,7 @@ import { GeminiService } from '../services/geminiService';
 import { Task } from '../types';
 
 interface NeuralInputProps {
-    onTaskDetected: (tasks: Partial<Task>[]) => void;
+    onTaskDetected: (actions: any[]) => void;
 }
 
 const NeuralInput: React.FC<NeuralInputProps> = ({ onTaskDetected }) => {
@@ -26,28 +26,15 @@ const NeuralInput: React.FC<NeuralInputProps> = ({ onTaskDetected }) => {
 
 
             if (result && Array.isArray(result) && result.length > 0) {
-                const tasksToCreate: Partial<Task>[] = result.map(res => {
-                    const t: Partial<Task> = {
-                        title: res.title,
-                        time: res.time,
-                        priority: res.priority,
-                        recurrence: res.recurrence === 'none'
-                            ? { type: 'specific_days', daysOfWeek: [new Date().getDay()] }
-                            : res.recurrence === 'daily'
-                                ? { type: 'daily' }
-                                : { type: 'interval', intervalDays: 7 }
-                    };
-
-                    if (res.recurrence === 'weekly' || res.specificDay !== undefined) {
-                        t.recurrence = {
-                            type: 'specific_days',
-                            daysOfWeek: res.specificDay !== undefined ? [res.specificDay] : [new Date().getDay()]
-                        };
-                    }
-                    return t;
+                // Determine if this is the "Old" schema (just tasks) or "New" schema (actions)
+                // We'll normalize to Actions
+                const actions = result.map(res => {
+                    if (res.type) return res; // Already an action
+                    // Legacy fallback: Treat as CREATE
+                    return { type: 'create', data: res };
                 });
 
-                onTaskDetected(tasksToCreate);
+                onTaskDetected(actions); // Updated signature
                 setStatus('success');
                 setInput('');
                 setTimeout(() => setStatus('idle'), 2000);

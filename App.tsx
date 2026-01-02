@@ -6,7 +6,7 @@ import Analytics from './components/Analytics';
 import Finances from './components/Finances';
 import Onboarding from './components/Onboarding';
 import NeuralInput from './components/NeuralInput';
-import { ViewState, Task } from './types';
+import { ViewState, Task, AgentAction } from './types';
 import { AudioService } from './services/audio';
 import { GeminiService } from './services/geminiService';
 import { StorageService } from './services/storage';
@@ -211,24 +211,64 @@ const App: React.FC = () => {
         setGeminiResult(result);
     };
 
-    const handleAiTask = (partialTasks: Partial<Task>[]) => {
-        const currentTasks = StorageService.getTasks(); // Always get fresh
-        const newTasks: Task[] = partialTasks.map((pt, index) => ({
-            id: (Date.now() + index).toString(),
-            title: pt.title || "New Protocol",
-            time: pt.time || "12:00",
-            groupId: 'default', // Fixed: Match Schedule's default activeGroupId
-            recurrence: pt.recurrence as any || { type: 'specific_days', daysOfWeek: [new Date().getDay()] },
-            completedDates: [],
-            streak: 0,
-            priority: pt.priority || 'normal',
-            createdAt: Date.now() + index
-        }));
+    const handleAiAction = (actions: AgentAction[]) => {
+        const currentTasks = StorageService.getTasks();
+        let updatedTasks = [...currentTasks];
 
-        const updatedTasks = [...currentTasks, ...newTasks];
+        actions.forEach(action => {
+            if (action.type === 'create') {
+                const pt = action.data;
+                const newTask: Task = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    title: pt.title || "New Protocol",
+                    time: pt.time || "09:00",
+                    groupId: 'default',
+                    recurrence: pt.recurrence as any || { type: 'specific_days', daysOfWeek: [new Date().getDay()] },
+                    completedDates: [],
+                    streak: 0,
+                    priority: pt.priority || 'normal',
+                    createdAt: Date.now()
+                };
+
+                // Normalizing Recurrence from AI
+                if ((pt.recurrence as any) === 'weekly' || (pt.recurrence as any) === 'specific_days' || (pt as any).specificDays) {
+                    // The AI often returns simplified objects, we need to map them to our internal RecurrenceConfig
+                    let days = (pt as any).specificDays || (pt as any).specificDay !== undefined ? [(pt as any).specificDay] : [new Date().getDay()];
+                    if (Array.isArray((pt as any).specificDays)) days = (pt as any).specificDays;
+
+                    newTask.recurrence = { type: 'specific_days', daysOfWeek: days };
+                } else if ((pt.recurrence as any) === 'daily') {
+                    newTask.recurrence = { type: 'daily' };
+                }
+
+                updatedTasks.push(newTask);
+            }
+
+            if (action.type === 'update') {
+                if (action.query) {
+                    const query = action.query.toLowerCase();
+                    updatedTasks = updatedTasks.map(t => {
+                        if (t.title.toLowerCase().includes(query)) {
+                            return { ...t, ...action.updates };
+                        }
+                        return t;
+                    });
+                }
+            }
+
+            if (action.type === 'delete') {
+                if (action.query) {
+                    const query = action.query.toLowerCase();
+                    if (query === 'completed') {
+                        updatedTasks = updatedTasks.filter(t => t.completedDates.length === 0); // Reset or delete? Usually delete means remove.
+                    } else {
+                        updatedTasks = updatedTasks.filter(t => !t.title.toLowerCase().includes(query));
+                    }
+                }
+            }
+        });
+
         saveTasksGlobally(updatedTasks);
-
-        // Visual feedback sound
         if (settings.soundEnabled) AudioService.playNotificationSound();
     };
 
@@ -377,7 +417,7 @@ const App: React.FC = () => {
                     <div key={view} className="h-full w-full animate-view-enter">
                         {view === ViewState.SCHEDULE && (
                             <div className="h-full flex flex-col">
-                                <NeuralInput onTaskDetected={handleAiTask} />
+                                <NeuralInput onTaskDetected={handleAiAction} />
                                 <Schedule
                                     tasks={tasks} // Pass lifted state
                                     onUpdateTasks={saveTasksGlobally} // Pass updater
@@ -386,7 +426,7 @@ const App: React.FC = () => {
                                 />
                             </div>
                         )}
-                        {view === ViewState.ANALYTICS && <Analytics />}
+                        {view === ViewState.ANALYTICS && <Analytics tasks={tasks} />}
                         {view === ViewState.FINANCES && <Finances />}
                         {view === ViewState.VAULT && <Vault />}
                     </div>
