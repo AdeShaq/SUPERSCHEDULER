@@ -1,4 +1,4 @@
-import { Client, Account, Databases, Query, ID, Models } from 'appwrite';
+import { Client, Account, Databases, Storage, ID } from 'appwrite';
 import { Task, Note, Folder, ScheduleGroup, SavingsGoal, SavingsLog } from '../types';
 
 // Appwrite Configuration
@@ -13,6 +13,9 @@ export const APPWRITE_CONFIG = {
         FOLDERS: import.meta.env.VITE_APPWRITE_COLLECTION_FOLDERS || '',
         SAVINGS_GOALS: import.meta.env.VITE_APPWRITE_COLLECTION_SAVINGS_GOALS || '',
         SAVINGS_LOGS: import.meta.env.VITE_APPWRITE_COLLECTION_SAVINGS_LOGS || '',
+    },
+    BUCKETS: {
+        IMAGES: import.meta.env.VITE_APPWRITE_BUCKET_IMAGES || '',
     }
 };
 
@@ -22,6 +25,7 @@ const client = new Client()
 
 const account = new Account(client);
 const databases = new Databases(client);
+const storage = new Storage(client);
 
 export const AppwriteService = {
     client,
@@ -119,5 +123,30 @@ export const AppwriteService = {
             console.error(`Failed to delete document ${documentId}`, error);
             return false;
         }
+    },
+
+    // Storage
+    uploadFile: async (file: File): Promise<string | null> => {
+        if (!APPWRITE_CONFIG.BUCKETS.IMAGES) {
+            console.warn("Storage Bucket ID not set");
+            return null;
+        }
+        try {
+            const uploaded = await storage.createFile(
+                APPWRITE_CONFIG.BUCKETS.IMAGES,
+                ID.unique(),
+                file
+            );
+            // Return the View URL
+            return storage.getFileView(APPWRITE_CONFIG.BUCKETS.IMAGES, uploaded.$id).toString();
+        } catch (error) {
+            console.error("Failed to upload file", error);
+            return null;
+        }
+    },
+
+    getFilePreview: (fileId: string) => {
+        if (!APPWRITE_CONFIG.BUCKETS.IMAGES) return '';
+        return storage.getFilePreview(APPWRITE_CONFIG.BUCKETS.IMAGES, fileId).toString();
     }
 };
