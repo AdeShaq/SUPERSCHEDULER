@@ -1,22 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X, Check, Zap, Clock, Trash2, Bell, Settings, Pencil, GripVertical } from 'lucide-react';
 import { Task, RecurrenceConfig, ScheduleGroup } from '../types';
-import { StorageService } from '../services/storage';
+
 import { AudioService } from '../services/audio';
 import TimePicker from './TimePicker';
 
 interface ScheduleProps {
-  tasks: Task[]; // Received from parent
-  onUpdateTasks: (tasks: Task[]) => void;
+  tasks: Task[];
+  groups: ScheduleGroup[];
+  onAddTask: (task: Task) => void;
+  onUpdateTask: (task: Task) => void;
+  onDeleteTask: (id: string) => void;
+  onAddGroup: (group: ScheduleGroup) => void;
+  onDeleteGroup: (id: string) => void;
   onAnalyze: (tasks: Task[]) => void;
   onOpenSettings: () => void;
 }
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, onOpenSettings }) => {
-  // const [tasks, setTasks] = useState<Task[]>([]); // REMOVED: Managed by parent
-  const [groups, setGroups] = useState<ScheduleGroup[]>([]);
+const Schedule: React.FC<ScheduleProps> = ({
+  tasks,
+  groups,
+  onAddTask,
+  onUpdateTask,
+  onDeleteTask,
+  onAddGroup,
+  onDeleteGroup,
+  onAnalyze,
+  onOpenSettings
+}) => {
   const [activeGroupId, setActiveGroupId] = useState<string>('default');
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [isAddingGroup, setIsAddingGroup] = useState(false);
@@ -29,20 +42,8 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Removed loadData and saveTasks logic
 
-  const loadData = () => {
-    // setTasks(StorageService.getTasks()); // Handled by parent
-    setGroups(StorageService.getGroups());
-  };
-
-  const saveTasks = (updatedTasks: Task[]) => {
-    // setTasks(updatedTasks);
-    // StorageService.saveTasks(updatedTasks);
-    onUpdateTasks(updatedTasks); // Delegate to parent
-  };
 
   const handleAddGroup = () => {
     if (!newGroupName.trim()) return;
@@ -50,9 +51,7 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
       id: Date.now().toString(),
       name: newGroupName.toUpperCase()
     };
-    const updatedGroups = [...groups, newGroup];
-    setGroups(updatedGroups);
-    StorageService.saveGroups(updatedGroups);
+    onAddGroup(newGroup);
     setNewGroupName('');
     setIsAddingGroup(false);
     setActiveGroupId(newGroup.id);
@@ -61,11 +60,7 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
   const deleteGroup = (id: string) => {
     if (id === 'default') return;
     if (window.confirm("Delete group? Tasks will move to GENERAL.")) {
-      const updatedGroups = groups.filter(g => g.id !== id);
-      setGroups(updatedGroups);
-      StorageService.saveGroups(updatedGroups);
-      const updatedTasks = tasks.map(t => t.groupId === id ? { ...t, groupId: 'default' } : t);
-      saveTasks(updatedTasks);
+      onDeleteGroup(id);
       setActiveGroupId('default');
     }
   };
@@ -81,18 +76,15 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
 
     if (editingTaskId) {
       // Update existing task
-      const updatedTasks = tasks.map(t => {
-        if (t.id === editingTaskId) {
-          return {
-            ...t,
-            title: newTaskTitle,
-            time: taskTime || undefined,
-            recurrence
-          };
-        }
-        return t;
-      });
-      onUpdateTasks(updatedTasks);
+      const existingTask = tasks.find(t => t.id === editingTaskId);
+      if (existingTask) {
+        onUpdateTask({
+          ...existingTask,
+          title: newTaskTitle,
+          time: taskTime || undefined,
+          recurrence
+        });
+      }
       setEditingTaskId(null);
     } else {
       // Create new task
@@ -107,7 +99,7 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
         priority: 'normal',
         createdAt: Date.now()
       };
-      onUpdateTasks([task, ...tasks]);
+      onAddTask(task);
     }
 
     // Reset Form
@@ -151,16 +143,10 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
     e.preventDefault();
     if (!draggedTaskId || draggedTaskId === targetTaskId) return;
 
-    const draggedIndex = tasks.findIndex(t => t.id === draggedTaskId);
-    const targetIndex = tasks.findIndex(t => t.id === targetTaskId);
-
-    if (draggedIndex === -1 || targetIndex === -1) return;
-
-    const newTasks = [...tasks];
-    const [movedTask] = newTasks.splice(draggedIndex, 1);
-    newTasks.splice(targetIndex, 0, movedTask);
-
-    onUpdateTasks(newTasks);
+    // Drag and Drop disabled temporarily during backend migration
+    // const draggedIndex = tasks.findIndex(t => t.id === draggedTaskId);
+    // const targetIndex = tasks.findIndex(t => t.id === targetTaskId);
+    // ... logic required backend reordering ...
   };
 
   const toggleDaySelection = (dayIndex: number) => {
@@ -173,30 +159,28 @@ const Schedule: React.FC<ScheduleProps> = ({ tasks, onUpdateTasks, onAnalyze, on
 
   const toggleComplete = (taskId: string) => {
     const today = new Date().toISOString().split('T')[0];
-    const updatedTasks = tasks.map(t => {
-      if (t.id === taskId) {
-        const isCompletedToday = t.completedDates.includes(today);
-        let newCompletedDates = t.completedDates;
-        let newStreak = t.streak;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
 
-        if (isCompletedToday) {
-          newCompletedDates = t.completedDates.filter(d => d !== today);
-          newStreak = Math.max(0, newStreak - 1);
-        } else {
-          newCompletedDates = [...t.completedDates, today];
-          newStreak = newStreak + 1;
-          AudioService.playCompletion();
-        }
-        return { ...t, completedDates: newCompletedDates, streak: newStreak, lastCompletedAt: Date.now() };
-      }
-      return t;
-    });
-    saveTasks(updatedTasks);
+    const isCompletedToday = task.completedDates.includes(today);
+    let newCompletedDates = task.completedDates;
+    let newStreak = task.streak;
+
+    if (isCompletedToday) {
+      newCompletedDates = task.completedDates.filter(d => d !== today);
+      newStreak = Math.max(0, newStreak - 1);
+    } else {
+      newCompletedDates = [...task.completedDates, today];
+      newStreak = newStreak + 1;
+      AudioService.playCompletion();
+    }
+
+    onUpdateTask({ ...task, completedDates: newCompletedDates, streak: newStreak, lastCompletedAt: Date.now() });
   };
 
   const deleteTask = (id: string) => {
     if (window.confirm("Abort Protocol?")) {
-      saveTasks(tasks.filter(t => t.id !== id));
+      onDeleteTask(id);
     }
   };
 

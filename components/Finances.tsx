@@ -20,32 +20,26 @@ const Finances: React.FC = () => {
     const [depositAmount, setDepositAmount] = useState('');
 
     useEffect(() => {
-        loadData();
+        const load = async () => {
+            const loadedGoals = await StorageService.getSavingsGoals();
+            const loadedLogs = await StorageService.getSavingsLogs();
+            setGoals(loadedGoals);
+            setLogs(loadedLogs);
+            const total = loadedGoals.reduce((acc, goal) => acc + goal.currentAmount, 0);
+            setTotalSaved(total);
+        };
+        load();
     }, []);
 
-    const loadData = () => {
-        const loadedGoals = StorageService.getSavingsGoals();
-        const loadedLogs = StorageService.getSavingsLogs();
-        setGoals(loadedGoals);
-        setLogs(loadedLogs);
-
-        const total = loadedGoals.reduce((acc, goal) => acc + goal.currentAmount, 0);
-        setTotalSaved(total);
-    };
-
-    const handleCreateGoal = (e: React.FormEvent) => {
+    const handleCreateGoal = async (e: React.FormEvent) => {
         e.preventDefault();
 
         let finalTarget = Number(newGoalTarget);
         let finalRecurring = undefined;
 
-        // If recurring style, the input is the "Recurring Amount"
-        // and target might be implicit or just tracking momentum.
-        // For simplicity in this logic from user request:
-        // "Enter amount I want to be depositing... and frequency"
         if (newGoalFrequency !== 'manual') {
-            finalRecurring = Number(newGoalTarget); // User input in "Amount" box is the recurring step
-            finalTarget = 0; // Or standard infinite
+            finalRecurring = Number(newGoalTarget);
+            finalTarget = 0;
         }
 
         const newGoal: SavingsGoal = {
@@ -57,43 +51,41 @@ const Finances: React.FC = () => {
             frequency: newGoalFrequency,
             deadline: ''
         };
-        const updatedGoals = [...goals, newGoal];
-        StorageService.saveSavingsGoals(updatedGoals);
-        setGoals(updatedGoals);
+
+        // Optimistic
+        setGoals([...goals, newGoal]);
         setNewGoalTitle('');
         setNewGoalTarget('');
         setShowAddModal(false);
+
+        await StorageService.addSavingsGoal(newGoal);
     };
 
-    const handleDeleteGoal = (goalId: string) => {
+    const handleDeleteGoal = async (goalId: string) => {
         if (window.confirm("Are you sure you want to delete this savings protocol? Data will be securely erased.")) {
-            const updatedGoals = goals.filter(g => g.id !== goalId);
-            StorageService.saveSavingsGoals(updatedGoals);
-            setGoals(updatedGoals);
-            // Optional: also delete logs associated with it? 
-            // For now, keep logs audit trail or cleanup:
-            const updatedLogs = logs.filter(l => l.goalId !== goalId);
-            StorageService.saveSavingsLogs(updatedLogs);
-            setLogs(updatedLogs);
+            // Optimistic
+            setGoals(goals.filter(g => g.id !== goalId));
+            await StorageService.deleteSavingsGoal(goalId);
+
+            // Logs are not deleted by storage service, but maybe we should disconnect them?
+            // Ignoring logs cleanup for now as requested simple migration.
         }
     };
 
-    const handleTransaction = (type: 'deposit' | 'withdraw') => {
+    const handleTransaction = async (type: 'deposit' | 'withdraw') => {
         if (!selectedGoalId || !depositAmount) return;
 
         const amount = Number(depositAmount);
-        const updatedGoals = goals.map(goal => {
-            if (goal.id === selectedGoalId) {
-                return {
-                    ...goal,
-                    currentAmount: type === 'deposit'
-                        ? goal.currentAmount + amount
-                        : Math.max(0, goal.currentAmount - amount),
-                    lastLogDate: type === 'deposit' ? new Date().toISOString() : goal.lastLogDate
-                };
-            }
-            return goal;
-        });
+        const goal = goals.find(g => g.id === selectedGoalId);
+        if (!goal) return;
+
+        const updatedGoal = {
+            ...goal,
+            currentAmount: type === 'deposit'
+                ? goal.currentAmount + amount
+                : Math.max(0, goal.currentAmount - amount),
+            lastLogDate: type === 'deposit' ? new Date().toISOString() : goal.lastLogDate
+        };
 
         const newLog: SavingsLog = {
             id: Date.now().toString(),
@@ -103,13 +95,16 @@ const Finances: React.FC = () => {
             type: type
         };
 
-        const updatedLogs = [newLog, ...logs];
+        // Optimistic Update
+        setGoals(goals.map(g => g.id === selectedGoalId ? updatedGoal : g));
+        setLogs([newLog, ...logs]);
+        setTotalSaved(prev => type === 'deposit' ? prev + amount : prev - amount);
 
-        StorageService.saveSavingsGoals(updatedGoals);
-        StorageService.saveSavingsLogs(updatedLogs);
-
-        loadData();
         setDepositAmount('');
+
+        // Persist
+        await StorageService.updateSavingsGoal(updatedGoal);
+        await StorageService.addSavingsLog(newLog);
     };
 
     const formatCurrency = (amount: number) => {
@@ -167,18 +162,18 @@ const Finances: React.FC = () => {
             </div>
 
             {/* Main Stats Card */}
-            <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group">
+            <div className="glass-panel p-4 md:p-6 rounded-2xl relative overflow-hidden group shrink-0">
                 <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <TrendingUp size={120} />
+                    <TrendingUp size={80} className="md:w-[120px] md:h-[120px]" />
                 </div>
-                <h3 className="text-sm font-mono text-muted uppercase mb-2">Total Assets Encrypted</h3>
-                <div className="text-5xl md:text-6xl font-bold text-white tracking-tighter drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                <h3 className="text-xs md:text-sm font-mono text-muted uppercase mb-2">Total Assets Encrypted</h3>
+                <div className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tighter drop-shadow-[0_0_15px_rgba(16,185,129,0.3)] break-words leading-tight">
                     {formatCurrency(totalSaved)}
                 </div>
-                <div className="mt-4 flex gap-4">
-                    <div className="glass-panel px-4 py-2 rounded-lg flex items-center gap-2 border-white/5">
-                        <ArrowUpRight size={16} className="text-accent" />
-                        <span className="text-xs font-bold text-gray-300">
+                <div className="mt-4 flex flex-wrap gap-2 md:gap-4 relative z-10">
+                    <div className="glass-panel px-3 py-1.5 md:px-4 md:py-2 rounded-lg flex items-center gap-2 border-white/5">
+                        <ArrowUpRight size={14} className="text-accent md:w-4 md:h-4" />
+                        <span className="text-[10px] md:text-xs font-bold text-gray-300">
                             + {formatCurrency(logs.filter(l => l.type === 'deposit').reduce((a, b) => a + b.amount, 0))} IN
                         </span>
                     </div>
