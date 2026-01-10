@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock, AlertOctagon, TrendingUp } from 'lucide-react';
+import { Calendar, BarChart2, FileText, Settings, CircleX, Terminal, Bell, Clock, AlertOctagon, TrendingUp, Check } from 'lucide-react';
 import Schedule from './components/Schedule';
 import Vault from './components/Vault';
 import Analytics from './components/Analytics';
 import Finances from './components/Finances';
 import Onboarding from './components/Onboarding';
 import NeuralInput from './components/NeuralInput';
-import { ViewState, Task, AgentAction } from './types';
+import { ViewState, Task, AgentAction, SavingsGoal } from './types';
 import { AudioService } from './services/audio';
 import { GeminiService } from './services/geminiService';
+import { AppwriteService } from './services/appwrite';
 import { StorageService } from './services/storage';
+import { OfflineService } from './services/offline';
 
 const App: React.FC = () => {
     const [view, setView] = useState<ViewState>(ViewState.SCHEDULE);
@@ -21,6 +23,7 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [showOnboarding, setShowOnboarding] = useState(false);
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
 
     const [settings, setSettings] = useState({
         soundEnabled: localStorage.getItem('echoTrack_soundEnabled') !== 'false',
@@ -33,6 +36,9 @@ const App: React.FC = () => {
     useEffect(() => { tasksRef.current = tasks; }, [tasks]);
 
     const [groups, setGroups] = useState<any[]>([]);
+    const [goals, setGoals] = useState<SavingsGoal[]>([]);
+    const goalsRef = useRef<SavingsGoal[]>([]);
+    useEffect(() => { goalsRef.current = goals; }, [goals]);
 
     // Initial Data Load
     useEffect(() => {
@@ -43,6 +49,8 @@ const App: React.FC = () => {
                 setTasks(t);
                 const g = await StorageService.getGroups();
                 setGroups(g);
+                const sg = await StorageService.getSavingsGoals();
+                setGoals(sg);
 
                 // Simulate fast loading UI
                 setIsLoading(false);
@@ -51,9 +59,10 @@ const App: React.FC = () => {
                 const hasOnboarded = localStorage.getItem('echoTrack_onboarded');
                 if (!hasOnboarded) setShowOnboarding(true);
 
-            } catch (e) {
+            } catch (e: any) {
                 console.error("Failed to load initial data", e);
-                setIsLoading(false); // Enable UI anyway
+                alert(`Data Sync Failed: ${e.message || "Unknown Error"}. Check your network or configuration.`);
+                setIsLoading(false);
             }
         };
         loadData();
@@ -71,16 +80,34 @@ const App: React.FC = () => {
             if (created) {
                 // Replace temp ID with real ID from backend
                 setTasks(prev => prev.map(t => t.id === tempId ? created : t));
+                showToast("PROTOCOL SAVED");
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to create task", e);
-            // Revert? For now, we keep optimistic or alert user.
+            // Revert optimistic update
+            setTasks(prev => prev.filter(t => t.id !== tempId));
+            alert("Failed to save task to backend. Changes reverted.");
         }
     };
 
     const handleUpdateTask = async (updatedTask: Task) => {
         setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
-        await StorageService.updateTask(updatedTask);
+        try {
+            const updated = await StorageService.updateTask(updatedTask);
+            if (updated) {
+                // Ensure local state matches backend state (fixes any serialization drifts)
+                setTasks(prev => prev.map(t => t.id === updatedTask.id ? updated : t));
+                showToast("PROTOCOL UPDATED");
+            }
+        } catch (e) {
+            console.error("Failed to update task", e);
+            // Silent fail for update? Or alert? Stick to logging for now as it's less critical than creation loss.
+        }
+    };
+
+    const showToast = (msg: string) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 2000);
     };
 
     const handleDeleteTask = async (taskId: string) => {
@@ -124,6 +151,34 @@ const App: React.FC = () => {
         }
     };
 
+    // --- Savings Goal Handlers ---
+    const handleCreateGoal = async (goal: SavingsGoal) => {
+        // Optimistic
+        setGoals(prev => [...prev, goal]);
+        try {
+            await StorageService.addSavingsGoal(goal);
+            showToast("VAULT UPDATED");
+        } catch (e) {
+            console.error("Failed to add goal", e);
+            setGoals(prev => prev.filter(g => g.id !== goal.id));
+        }
+    };
+
+    const handleUpdateGoal = async (updatedGoal: SavingsGoal) => {
+        setGoals(prev => prev.map(g => g.id === updatedGoal.id ? updatedGoal : g));
+        try {
+            await StorageService.updateSavingsGoal(updatedGoal);
+            showToast("VAULT SYNCED");
+        } catch (e) {
+            console.error("Failed to update goal", e);
+        }
+    };
+
+    const handleDeleteGoal = async (goalId: string) => {
+        setGoals(prev => prev.filter(g => g.id !== goalId));
+        await StorageService.deleteSavingsGoal(goalId);
+    };
+
     const lastAlarmMinute = useRef<string | null>(null);
     const audioContextInitialized = useRef<boolean>(false);
 
@@ -134,11 +189,13 @@ const App: React.FC = () => {
     // Initialize Audio & Permissions (Reduced Loading Logic here since moved to async loadTasks)
     useEffect(() => {
         const initServices = () => {
+            // 1. Audio Unlock (Mobile) - Play silent sound immediately on interaction
             if (!audioContextInitialized.current) {
-                AudioService.init();
+                AudioService.resumeContext();
                 audioContextInitialized.current = true;
             }
-            if ("Notification" in window && Notification.permission !== "granted") {
+            // 2. Notification Permissions
+            if (settings.notificationsEnabled && "Notification" in window && Notification.permission !== "granted") {
                 Notification.requestPermission();
             }
         };
@@ -150,6 +207,41 @@ const App: React.FC = () => {
             window.removeEventListener('click', initServices);
             window.removeEventListener('touchstart', initServices);
         };
+    }, []);
+
+    // 2b. Offline Sync Manager
+    useEffect(() => {
+        const handleOnline = async () => {
+            const queue = OfflineService.getQueue();
+            if (queue.length === 0) return;
+
+            showToast(`SYNCING ${queue.length} CHANGED ITEMS...`);
+
+            // We clear queue first to prevent loops, relying on StorageService to re-queue failures
+            OfflineService.clearQueue();
+
+            for (const action of queue) {
+                try {
+                    switch (action.type) {
+                        case 'CREATE_TASK': await StorageService.addTask(action.payload); break;
+                        case 'UPDATE_TASK': await StorageService.updateTask(action.payload); break;
+                        case 'DELETE_TASK': await StorageService.deleteTask(action.id); break;
+                        case 'CREATE_NOTE': await StorageService.addNote(action.payload); break;
+                        case 'UPDATE_NOTE': await StorageService.updateNote(action.payload); break;
+                        case 'DELETE_NOTE': await StorageService.deleteNote(action.id); break;
+                    }
+                } catch (e) {
+                    console.error("Sync retry failed", e);
+                }
+            }
+            showToast("DATA SYNC COMPLETE");
+        };
+
+        window.addEventListener('online', handleOnline);
+        // Also try once on mount if already online
+        if (navigator.onLine) handleOnline();
+
+        return () => window.removeEventListener('online', handleOnline);
     }, []);
 
     // Global Time Loop (1 second tick)
@@ -186,11 +278,22 @@ const App: React.FC = () => {
                                 }
 
                                 if (settings.notificationsEnabled && Notification.permission === "granted") {
-                                    new Notification("EchoTrack EXECUTE", {
-                                        body: `PROTOCOL: ${task.title}`,
-                                        requireInteraction: true,
-                                        icon: '/icon.png'
-                                    });
+                                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                                        navigator.serviceWorker.ready.then(reg => {
+                                            reg.showNotification("EchoTrack EXECUTE", {
+                                                body: `PROTOCOL: ${task.title}`,
+                                                requireInteraction: true,
+                                                icon: '/icon.png',
+                                                // vibrate: [200, 100, 200]
+                                            });
+                                        });
+                                    } else {
+                                        new Notification("EchoTrack EXECUTE", {
+                                            body: `PROTOCOL: ${task.title}`,
+                                            requireInteraction: true,
+                                            icon: '/icon.png'
+                                        });
+                                    }
                                 }
                                 return task;
                             });
@@ -198,6 +301,49 @@ const App: React.FC = () => {
                     }
                 });
                 lastAlarmMinute.current = currentTimeStr;
+            }
+
+            // 1b. Check Savings Alarms
+            if (settings.alarmsEnabled && lastAlarmMinute.current === currentTimeStr) { // Check once per minute
+                goalsRef.current.forEach(goal => {
+                    if (goal.reminderEnabled && goal.reminderTime === currentTimeStr) {
+                        // Simple Daily Check for now.
+                        // Ideally check frequency, but "Daily Reminder" is safest default.
+
+                        if (!activeAlarmTask) {
+                            setActiveAlarmTask(prev => {
+                                if (prev) return prev;
+                                if (settings.soundEnabled) AudioService.startAlarmLoop();
+
+                                const notificationTitle = "DEPOSIT REQUIRED";
+                                if (settings.notificationsEnabled && Notification.permission === "granted") {
+                                    const ops = {
+                                        body: `Goal: ${goal.title}`,
+                                        requireInteraction: true,
+                                        icon: '/icon.png'
+                                    };
+                                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                                        navigator.serviceWorker.ready.then(reg => reg.showNotification(notificationTitle, ops));
+                                    } else {
+                                        new Notification(notificationTitle, ops);
+                                    }
+                                }
+
+                                // Create a Pseudo-Task for the Alarm Overlay
+                                return {
+                                    id: goal.id,
+                                    title: `DEPOSIT: ${goal.title}`,
+                                    groupId: 'savings',
+                                    recurrence: { type: 'daily' },
+                                    completedDates: [],
+                                    streak: 0,
+                                    priority: 'high',
+                                    createdAt: Date.now()
+                                } as Task;
+                            });
+                        }
+                    }
+                });
             }
 
             // 2. Update Countdown
@@ -400,6 +546,16 @@ const App: React.FC = () => {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
+            {/* SUCCESS TOAST */}
+            {toastMessage && (
+                <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] animate-fade-in-down">
+                    <div className="glass-panel px-6 py-3 rounded-full border border-accent/50 flex items-center gap-3 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                        <Check size={18} className="text-accent" />
+                        <span className="text-xs font-bold text-white tracking-widest uppercase">{toastMessage}</span>
+                    </div>
+                </div>
+            )}
+
             {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
             {/* GLOBAL ALARM OVERLAY */}
@@ -487,7 +643,14 @@ const App: React.FC = () => {
                             </div>
                         )}
                         {view === ViewState.ANALYTICS && <Analytics tasks={tasks} />}
-                        {view === ViewState.FINANCES && <Finances />}
+                        {view === ViewState.FINANCES && (
+                            <Finances
+                                goals={goals}
+                                onAddGoal={handleCreateGoal}
+                                onUpdateGoal={handleUpdateGoal}
+                                onDeleteGoal={handleDeleteGoal}
+                            />
+                        )}
                         {view === ViewState.VAULT && <Vault />}
                     </div>
                 </div>
@@ -561,10 +724,20 @@ const App: React.FC = () => {
                                         <button
                                             onClick={() => {
                                                 if (settings.notificationsEnabled && Notification.permission === "granted") {
-                                                    new Notification("EchoTrack TEST", {
-                                                        body: "System notification channel active.",
-                                                        icon: '/icon.png'
-                                                    });
+                                                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                                                        navigator.serviceWorker.ready.then(reg => {
+                                                            reg.showNotification("EchoTrack TEST", {
+                                                                body: "System notification channel active.",
+                                                                icon: '/icon.png',
+                                                                // vibrate: [200, 100, 200]
+                                                            });
+                                                        });
+                                                    } else {
+                                                        new Notification("EchoTrack TEST", {
+                                                            body: "System notification channel active.",
+                                                            icon: '/icon.png'
+                                                        });
+                                                    }
                                                 } else if (!settings.notificationsEnabled) {
                                                     alert("Notifications disabled in settings.");
                                                 } else {
@@ -574,6 +747,23 @@ const App: React.FC = () => {
                                             className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-blue-400 hover:text-blue-300 border-blue-500/20 hover:border-blue-500/40"
                                         >
                                             <Terminal size={16} /> Test Notification
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const userId = await AppwriteService.getUserId();
+                                                    const sessionType = userId ? "Active Session" : "No Session";
+
+                                                    await StorageService.getTasks();
+                                                    alert(`Connection Successful!\nUser: ${userId || 'Anonymous'}\nStatus: Tasks loaded.`);
+                                                } catch (e: any) {
+                                                    const userId = await AppwriteService.getUserId();
+                                                    alert(`Connection Failed: ${e.message}\nUser: ${userId || 'Anonymous'}\n\nTip: Go to Appwrite Console > Database > [Collection] > Settings > Permissions. Add Role "Any" or "Guests" for Read/Write.`);
+                                                }
+                                            }}
+                                            className="glass-button w-full py-3 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider rounded-lg text-green-400 hover:text-green-300 border-green-500/20 hover:border-green-500/40"
+                                        >
+                                            <AlertOctagon size={16} /> Test Connection
                                         </button>
                                     </div>
                                 </div>

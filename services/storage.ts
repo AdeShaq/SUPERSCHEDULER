@@ -1,6 +1,7 @@
 import { Task, Note, Folder, ScheduleGroup, SavingsGoal, SavingsLog } from '../types';
 import { AppwriteService, APPWRITE_CONFIG } from './appwrite';
 import { Query } from 'appwrite';
+import { OfflineService } from './offline';
 
 export const StorageService = {
   // --- TASKS ---
@@ -47,7 +48,14 @@ export const StorageService = {
   },
 
   // New CRUD Methods
+  // New CRUD Methods
   addTask: async (task: Task) => {
+    // Offline Check
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: task.id, type: 'CREATE_TASK', payload: task });
+      return task; // Optimistic return
+    }
+
     if (!APPWRITE_CONFIG.COLLECTIONS.TASKS) return null;
     const payload = {
       title: task.title,
@@ -59,10 +67,31 @@ export const StorageService = {
       createdAt: task.createdAt,
       streak: task.streak
     };
-    return await AppwriteService.createDocument<Task>(APPWRITE_CONFIG.COLLECTIONS.TASKS, payload, task.id);
+
+    try {
+      const created = await AppwriteService.createDocument<any>(APPWRITE_CONFIG.COLLECTIONS.TASKS, payload, task.id);
+      if (!created) throw new Error("Create failed");
+      return {
+        ...created,
+        id: created.$id,
+        recurrence: typeof created.recurrence === 'string' ? JSON.parse(created.recurrence) : created.recurrence,
+        completedDates: typeof created.completedDates === 'string' ? JSON.parse(created.completedDates) : created.completedDates,
+        groupId: created.groupId || 'default'
+      } as Task;
+    } catch (e) {
+      // Fallback to Queue on failure
+      console.warn("Network/Server fail, queuing task creation", e);
+      OfflineService.addToQueue({ id: task.id, type: 'CREATE_TASK', payload: task });
+      return task;
+    }
   },
 
   updateTask: async (task: Task) => {
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: task.id, type: 'UPDATE_TASK', payload: task });
+      return task;
+    }
+
     if (!APPWRITE_CONFIG.COLLECTIONS.TASKS) return null;
     const payload = {
       title: task.title,
@@ -73,12 +102,36 @@ export const StorageService = {
       streak: task.streak,
       priority: task.priority
     };
-    return await AppwriteService.updateDocument<Task>(APPWRITE_CONFIG.COLLECTIONS.TASKS, task.id, payload);
+
+    try {
+      const updated = await AppwriteService.updateDocument<any>(APPWRITE_CONFIG.COLLECTIONS.TASKS, task.id, payload);
+      if (!updated) throw new Error("Update failed");
+      return {
+        ...updated,
+        id: updated.$id,
+        recurrence: typeof updated.recurrence === 'string' ? JSON.parse(updated.recurrence) : updated.recurrence,
+        completedDates: typeof updated.completedDates === 'string' ? JSON.parse(updated.completedDates) : updated.completedDates,
+        groupId: updated.groupId || 'default'
+      } as Task;
+    } catch (e) {
+      console.warn("Network/Server fail, queuing task update", e);
+      OfflineService.addToQueue({ id: task.id, type: 'UPDATE_TASK', payload: task });
+      return task;
+    }
   },
 
   deleteTask: async (taskId: string) => {
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: taskId, type: 'DELETE_TASK', payload: { id: taskId } });
+      return true;
+    }
     if (!APPWRITE_CONFIG.COLLECTIONS.TASKS) return false;
-    return await AppwriteService.deleteDocument(APPWRITE_CONFIG.COLLECTIONS.TASKS, taskId);
+    try {
+      return await AppwriteService.deleteDocument(APPWRITE_CONFIG.COLLECTIONS.TASKS, taskId);
+    } catch (e) {
+      OfflineService.addToQueue({ id: taskId, type: 'DELETE_TASK', payload: { id: taskId } });
+      return true;
+    }
   },
 
   // Retrofit: Implement saveTasks but warn or make it smart?
@@ -107,32 +160,96 @@ export const StorageService = {
   // --- NOTES ---
   getNotes: async (): Promise<Note[]> => {
     if (!APPWRITE_CONFIG.COLLECTIONS.NOTES) return [];
-    const docs = await AppwriteService.listDocuments<any>(APPWRITE_CONFIG.COLLECTIONS.NOTES);
-    return docs.map(d => ({
-      ...d,
-      tags: typeof d.tags === 'string' ? JSON.parse(d.tags) : d.tags || []
-    }));
+    try {
+      const docs = await AppwriteService.listDocuments<any>(APPWRITE_CONFIG.COLLECTIONS.NOTES);
+      return docs.map(d => ({
+        ...d,
+        id: d.$id,
+        tags: typeof d.tags === 'string' ? JSON.parse(d.tags) : d.tags || [],
+        attachments: typeof d.attachments === 'string' ? JSON.parse(d.attachments) : d.attachments || []
+      }));
+    } catch (e) {
+      console.error("Failed to get notes", e);
+      return [];
+    }
   },
 
   addNote: async (note: Note) => {
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: note.id, type: 'CREATE_NOTE', payload: note });
+      return note;
+    }
     if (!APPWRITE_CONFIG.COLLECTIONS.NOTES) return;
-    return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, {
-      ...note,
-      tags: JSON.stringify(note.tags)
-    }, note.id);
+    const payload = {
+      title: note.title,
+      content: note.content,
+      folderId: note.folderId,
+      tags: JSON.stringify(note.tags),
+      updatedAt: note.updatedAt,
+      isPinned: note.isPinned,
+      isLocked: note.isLocked,
+      password: note.password,
+      attachments: JSON.stringify(note.attachments || [])
+    };
+    try {
+      const created = await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, payload, note.id) as any;
+      if (!created) throw new Error("Create failed");
+      return {
+        ...created,
+        id: created.$id,
+        tags: typeof created.tags === 'string' ? JSON.parse(created.tags) : created.tags,
+        attachments: typeof created.attachments === 'string' ? JSON.parse(created.attachments) : created.attachments
+      } as Note;
+    } catch (e) {
+      OfflineService.addToQueue({ id: note.id, type: 'CREATE_NOTE', payload: note });
+      return note;
+    }
   },
 
   updateNote: async (note: Note) => {
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: note.id, type: 'UPDATE_NOTE', payload: note });
+      return note;
+    }
     if (!APPWRITE_CONFIG.COLLECTIONS.NOTES) return;
-    return await AppwriteService.updateDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, note.id, {
-      ...note,
-      tags: JSON.stringify(note.tags)
-    });
+    const payload = {
+      title: note.title,
+      content: note.content,
+      folderId: note.folderId,
+      tags: JSON.stringify(note.tags),
+      updatedAt: note.updatedAt,
+      isPinned: note.isPinned,
+      isLocked: note.isLocked,
+      password: note.password,
+      attachments: JSON.stringify(note.attachments || [])
+    };
+    try {
+      const updated = await AppwriteService.updateDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, note.id, payload) as any;
+      if (!updated) throw new Error("Update failed");
+      return {
+        ...updated,
+        id: updated.$id,
+        tags: typeof updated.tags === 'string' ? JSON.parse(updated.tags) : updated.tags,
+        attachments: typeof updated.attachments === 'string' ? JSON.parse(updated.attachments) : updated.attachments
+      } as Note;
+    } catch (e) {
+      OfflineService.addToQueue({ id: note.id, type: 'UPDATE_NOTE', payload: note });
+      return note;
+    }
   },
 
   deleteNote: async (noteId: string) => {
+    if (!navigator.onLine) {
+      OfflineService.addToQueue({ id: noteId, type: 'DELETE_NOTE', payload: { id: noteId } });
+      return true;
+    }
     if (!APPWRITE_CONFIG.COLLECTIONS.NOTES) return;
-    return await AppwriteService.deleteDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, noteId);
+    try {
+      return await AppwriteService.deleteDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, noteId);
+    } catch (e) {
+      OfflineService.addToQueue({ id: noteId, type: 'DELETE_NOTE', payload: { id: noteId } });
+      return true;
+    }
   },
 
   // --- FOLDERS ---

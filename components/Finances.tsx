@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Target, TrendingUp, Plus, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, CreditCard, Trash2 } from 'lucide-react';
+import { Target, TrendingUp, Plus, Receipt, ArrowUpRight, ArrowDownLeft, Wallet, CreditCard, Trash2, Bell, Clock } from 'lucide-react';
 import { SavingsGoal, SavingsLog } from '../types';
 import { StorageService } from '../services/storage';
+import TimePicker from './TimePicker';
 
-const Finances: React.FC = () => {
-    const [goals, setGoals] = useState<SavingsGoal[]>([]);
+interface FinancesProps {
+    goals: SavingsGoal[];
+    onAddGoal: (goal: SavingsGoal) => Promise<void>;
+    onUpdateGoal: (goal: SavingsGoal) => Promise<void>;
+    onDeleteGoal: (goalId: string) => Promise<void>;
+}
+
+const Finances: React.FC<FinancesProps> = ({ goals, onAddGoal, onUpdateGoal, onDeleteGoal }) => {
+    // const [goals, setGoals] = useState<SavingsGoal[]>([]); // Lifted
     const [logs, setLogs] = useState<SavingsLog[]>([]);
     const [totalSaved, setTotalSaved] = useState(0);
     const [showAddModal, setShowAddModal] = useState(false);
@@ -14,6 +22,8 @@ const Finances: React.FC = () => {
     const [newGoalTitle, setNewGoalTitle] = useState('');
     const [newGoalTarget, setNewGoalTarget] = useState('');
     const [newGoalFrequency, setNewGoalFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'manual'>('manual');
+    const [newGoalReminderTime, setNewGoalReminderTime] = useState('09:00');
+    const [newGoalReminderEnabled, setNewGoalReminderEnabled] = useState(false);
 
     // Deposit Form
     const [selectedGoalId, setSelectedGoalId] = useState<string>('');
@@ -21,15 +31,20 @@ const Finances: React.FC = () => {
 
     useEffect(() => {
         const load = async () => {
-            const loadedGoals = await StorageService.getSavingsGoals();
+            // Goals passed via props
             const loadedLogs = await StorageService.getSavingsLogs();
-            setGoals(loadedGoals);
             setLogs(loadedLogs);
-            const total = loadedGoals.reduce((acc, goal) => acc + goal.currentAmount, 0);
-            setTotalSaved(total);
+
+            // Recalculate total from props
+            // This needs to also run when 'goals' prop changes
         };
         load();
     }, []);
+
+    useEffect(() => {
+        const total = goals.reduce((acc, goal) => acc + goal.currentAmount, 0);
+        setTotalSaved(total);
+    }, [goals]);
 
     const handleCreateGoal = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -49,26 +64,21 @@ const Finances: React.FC = () => {
             recurringAmount: finalRecurring,
             currentAmount: 0,
             frequency: newGoalFrequency,
-            deadline: ''
+            deadline: '',
+            reminderEnabled: newGoalReminderEnabled,
+            reminderTime: newGoalReminderTime
         };
 
-        // Optimistic
-        setGoals([...goals, newGoal]);
+        await onAddGoal(newGoal);
+
         setNewGoalTitle('');
         setNewGoalTarget('');
         setShowAddModal(false);
-
-        await StorageService.addSavingsGoal(newGoal);
     };
 
-    const handleDeleteGoal = async (goalId: string) => {
+    const handleDeleteGoalWrapper = async (goalId: string) => {
         if (window.confirm("Are you sure you want to delete this savings protocol? Data will be securely erased.")) {
-            // Optimistic
-            setGoals(goals.filter(g => g.id !== goalId));
-            await StorageService.deleteSavingsGoal(goalId);
-
-            // Logs are not deleted by storage service, but maybe we should disconnect them?
-            // Ignoring logs cleanup for now as requested simple migration.
+            await onDeleteGoal(goalId);
         }
     };
 
@@ -96,14 +106,17 @@ const Finances: React.FC = () => {
         };
 
         // Optimistic Update
-        setGoals(goals.map(g => g.id === selectedGoalId ? updatedGoal : g));
+        // setGoals managed by parent, but we might want local optimisitc...
+        // Actually, handleTransaction updates logs locally, and calls updateGoal on parent.
+        // The parent updates goals state.
+
         setLogs([newLog, ...logs]);
-        setTotalSaved(prev => type === 'deposit' ? prev + amount : prev - amount);
+        setTotalSaved(prev => type === 'deposit' ? prev + amount : prev - amount); // Local optimistic 
 
         setDepositAmount('');
 
         // Persist
-        await StorageService.updateSavingsGoal(updatedGoal);
+        await onUpdateGoal(updatedGoal);
         await StorageService.addSavingsLog(newLog);
     };
 
@@ -299,11 +312,17 @@ const Finances: React.FC = () => {
                                             <p className="text-[10px] font-mono text-gray-500 uppercase">Target: {formatCurrency(goal.targetAmount || 0)}</p>
                                         )}
                                         <span className="text-[10px] font-mono text-accent bg-accent/10 px-1 rounded uppercase">{goal.frequency}</span>
+                                        {goal.reminderEnabled && (
+                                            <div className="flex items-center gap-1 text-[10px] text-accent/70 font-mono">
+                                                <Bell size={10} />
+                                                {goal.reminderTime}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => handleDeleteGoal(goal.id)}
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteGoalWrapper(goal.id); }}
                                         className="text-gray-600 hover:text-red-500 transition-colors"
                                     >
                                         <Trash2 size={16} />
@@ -381,6 +400,28 @@ const Finances: React.FC = () => {
                                     placeholder={newGoalFrequency === 'manual' ? "Target Budget..." : "Amount per cycle..."}
                                     required
                                 />
+                            </div>
+
+                            {/* REMINDER SETTINGS */}
+                            <div className="bg-white/5 p-3 rounded-lg border border-white/10">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs uppercase font-bold text-gray-400 flex items-center gap-2">
+                                        <Bell size={14} /> Enable Reminder?
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewGoalReminderEnabled(!newGoalReminderEnabled)}
+                                        className={`w-10 h-5 rounded-full relative transition-colors ${newGoalReminderEnabled ? 'bg-accent' : 'bg-white/10'}`}
+                                    >
+                                        <div className={`w-3 h-3 bg-black rounded-full absolute top-1 transition-all ${newGoalReminderEnabled ? 'left-6' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                {newGoalReminderEnabled && (
+                                    <div className="animate-fade-in">
+                                        <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 block">Alarm Time</label>
+                                        <TimePicker value={newGoalReminderTime} onChange={setNewGoalReminderTime} />
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-3 pt-4">

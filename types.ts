@@ -34,6 +34,16 @@ export interface Note {
   folderId: string;
   tags: string[];
   updatedAt: number;
+  isPinned?: boolean;
+  isLocked?: boolean;
+  password?: string; // or hash
+  attachments?: {
+    id: string;
+    type: 'image' | 'video' | 'file';
+    url: string;
+    name: string;
+    size?: number;
+  }[];
 }
 
 export interface Folder {
@@ -56,6 +66,8 @@ export interface SavingsGoal {
   deadline?: string; // YYYY-MM-DD
   frequency: 'daily' | 'weekly' | 'monthly' | 'manual';
   lastLogDate?: string; // ISO date of last deposit
+  reminderTime?: string; // HH:mm
+  reminderEnabled?: boolean;
 }
 
 export interface SavingsLog {

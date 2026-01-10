@@ -29,6 +29,21 @@ export const AudioService = {
     osc.stop(ctx.currentTime + 0.3);
   },
 
+  // Unlock AudioContext for Mobile (Silent Buffer)
+  resumeContext: () => {
+    if (!AudioService.ctx) AudioService.init();
+    const ctx = AudioService.ctx!;
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+    // Play silent buffer to force unlock
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  },
+
   // Single pulse - SIREN UPGRADE
   playAlarmPulse: () => {
     if (!AudioService.ctx) AudioService.init();

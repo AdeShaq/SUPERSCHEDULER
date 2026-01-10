@@ -54,45 +54,31 @@ export const AppwriteService = {
     // Generic Helper for Documents
     listDocuments: async <T>(collectionId: string, queries: string[] = []): Promise<T[]> => {
         if (!APPWRITE_CONFIG.PROJECT_ID) {
-            console.warn("Appwrite Project ID not set");
-            return [];
+            throw new Error("Appwrite Project ID not set");
         }
-        try {
-            const response = await databases.listDocuments(
-                APPWRITE_CONFIG.DATABASE_ID,
-                collectionId,
-                queries
-            );
-            return response.documents.map(doc => ({
-                ...doc,
-                id: doc.$id // Map Appwrite $id to our internal id
-            })) as unknown as T[];
-        } catch (error) {
-            console.error(`Failed to list documents from ${collectionId}`, error);
-            return [];
-        }
+        // Let it throw if it fails
+        const response = await databases.listDocuments(
+            APPWRITE_CONFIG.DATABASE_ID,
+            collectionId,
+            queries
+        );
+        return response.documents.map(doc => ({
+            ...doc,
+            id: doc.$id // Map Appwrite $id to our internal id
+        })) as unknown as T[];
     },
 
     createDocument: async <T>(collectionId: string, data: any, id = ID.unique()): Promise<T | null> => {
-        try {
-            // Remove 'id' from data payload as Appwrite uses $id, or uses the ID param
-            const { id: _, ...payload } = data;
+        // Remove 'id' from data payload as Appwrite uses $id, or uses the ID param
+        const { id: _, ...payload } = data;
 
-            // Clean payload: JSON stringify complex objects if necessary 
-            // Our plan said we'd store recurrence/completedDates as strings. 
-            // For now, let's assume the calling service normalizes data.
-
-            const response = await databases.createDocument(
-                APPWRITE_CONFIG.DATABASE_ID,
-                collectionId,
-                id,
-                payload
-            );
-            return { ...response, id: response.$id } as unknown as T;
-        } catch (error) {
-            console.error(`Failed to create document in ${collectionId}`, error);
-            return null;
-        }
+        const response = await databases.createDocument(
+            APPWRITE_CONFIG.DATABASE_ID,
+            collectionId,
+            id,
+            payload
+        );
+        return { ...response, id: response.$id } as unknown as T;
     },
 
     updateDocument: async <T>(collectionId: string, documentId: string, data: any): Promise<T | null> => {
