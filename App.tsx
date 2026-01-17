@@ -13,6 +13,8 @@ import { AppwriteService } from './services/appwrite';
 import { StorageService } from './services/storage';
 import { OfflineService } from './services/offline';
 
+import PinOverlay from './components/PinOverlay';
+
 const App: React.FC = () => {
     const [view, setView] = useState<ViewState>(ViewState.SCHEDULE);
     const [geminiResult, setGeminiResult] = useState<string | null>(null);
@@ -30,6 +32,11 @@ const App: React.FC = () => {
         alarmsEnabled: localStorage.getItem('echoTrack_alarmsEnabled') !== 'false',
         notificationsEnabled: localStorage.getItem('echoTrack_notificationsEnabled') !== 'false',
     });
+
+    // PIN State
+    const [pin, setPin] = useState<string | null>(localStorage.getItem('echoTrack_pin'));
+    const [isAppLocked, setIsAppLocked] = useState<boolean>(!!localStorage.getItem('echoTrack_pin'));
+    const [showPinSetup, setShowPinSetup] = useState(false);
 
     const [tasks, setTasks] = useState<Task[]>([]);
     const tasksRef = useRef<Task[]>([]);
@@ -123,9 +130,12 @@ const App: React.FC = () => {
             const created = await StorageService.addGroup(group);
             if (created) {
                 setGroups(prev => prev.map(g => g.id === group.id ? created : g));
+                showToast("GROUP CREATED");
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to create group", e);
+            setGroups(prev => prev.filter(g => g.id !== group.id)); // Revert
+            alert(`Failed to save group: ${e.message || "Network Error"}`);
         }
     };
 
@@ -158,9 +168,10 @@ const App: React.FC = () => {
         try {
             await StorageService.addSavingsGoal(goal);
             showToast("VAULT UPDATED");
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to add goal", e);
             setGoals(prev => prev.filter(g => g.id !== goal.id));
+            alert(`Failed to save Savings Goal: ${e.message || "Unknown error"}`);
         }
     };
 
@@ -169,8 +180,9 @@ const App: React.FC = () => {
         try {
             await StorageService.updateSavingsGoal(updatedGoal);
             showToast("VAULT SYNCED");
-        } catch (e) {
+        } catch (e: any) {
             console.error("Failed to update goal", e);
+            alert(`Failed to sync Goal progress: ${e.message}`);
         }
     };
 
@@ -257,12 +269,20 @@ const App: React.FC = () => {
             // 1. Check Alarms
             if (lastAlarmMinute.current !== currentTimeStr && settings.alarmsEnabled) {
                 currentTasks.forEach(task => {
-                    if (task.time === currentTimeStr && !task.completedDates.includes(todayStr)) {
+                    // Robust Time Comparison
+                    if (!task.time) return;
+                    const [tH, tM] = task.time.split(':').map(Number);
+                    const [cH, cM] = currentTimeStr.split(':').map(Number);
+
+                    if (tH === cH && tM === cM && !task.completedDates.includes(todayStr)) {
                         // Check Day Logic
                         let isActiveDay = true;
                         if (task.recurrence.type === 'specific_days' && task.recurrence.daysOfWeek) {
                             isActiveDay = task.recurrence.daysOfWeek.includes(now.getDay());
                         }
+
+                        // Also support Daily explicitly
+                        if (task.recurrence.type === 'daily') isActiveDay = true;
 
                         if (isActiveDay && !activeAlarmTask) {
                             // TRIGGER ALARM
@@ -546,6 +566,29 @@ const App: React.FC = () => {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
+            {/* PIN LOCK OVERLAY */}
+            {isAppLocked && pin && (
+                <PinOverlay
+                    mode="unlock"
+                    existingPin={pin}
+                    onSuccess={() => setIsAppLocked(false)}
+                />
+            )}
+
+            {/* PIN SETUP OVERLAY */}
+            {showPinSetup && (
+                <PinOverlay
+                    mode="setup"
+                    onSuccess={(newPin) => {
+                        setPin(newPin);
+                        localStorage.setItem('echoTrack_pin', newPin);
+                        setShowPinSetup(false);
+                        showToast("SECURITY CODE ENABLED");
+                    }}
+                    onCancel={() => setShowPinSetup(false)}
+                />
+            )}
+
             {/* SUCCESS TOAST */}
             {toastMessage && (
                 <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] animate-fade-in-down">

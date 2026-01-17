@@ -68,7 +68,7 @@ export const AppwriteService = {
         })) as unknown as T[];
     },
 
-    createDocument: async <T>(collectionId: string, data: any, id = ID.unique()): Promise<T | null> => {
+    createDocument: async <T>(collectionId: string, data: any, id = ID.unique(), permissions?: string[]): Promise<T | null> => {
         // Remove 'id' from data payload as Appwrite uses $id, or uses the ID param
         const { id: _, ...payload } = data;
 
@@ -76,7 +76,8 @@ export const AppwriteService = {
             APPWRITE_CONFIG.DATABASE_ID,
             collectionId,
             id,
-            payload
+            payload,
+            permissions
         );
         return { ...response, id: response.$id } as unknown as T;
     },

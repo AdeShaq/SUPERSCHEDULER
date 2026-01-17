@@ -1,6 +1,6 @@
 import { Task, Note, Folder, ScheduleGroup, SavingsGoal, SavingsLog } from '../types';
 import { AppwriteService, APPWRITE_CONFIG } from './appwrite';
-import { Query } from 'appwrite';
+import { Query, Permission, Role } from 'appwrite';
 import { OfflineService } from './offline';
 
 export const StorageService = {
@@ -69,7 +69,12 @@ export const StorageService = {
     };
 
     try {
-      const created = await AppwriteService.createDocument<any>(APPWRITE_CONFIG.COLLECTIONS.TASKS, payload, task.id);
+      const userId = await AppwriteService.getUserId();
+      const perms = userId
+        ? [Permission.read(Role.user(userId)), Permission.update(Role.user(userId)), Permission.delete(Role.user(userId))]
+        : undefined;
+
+      const created = await AppwriteService.createDocument<any>(APPWRITE_CONFIG.COLLECTIONS.TASKS, payload, task.id, perms);
       if (!created) throw new Error("Create failed");
       return {
         ...created,
@@ -140,15 +145,34 @@ export const StorageService = {
 
   // --- GROUPS ---
   getGroups: async (): Promise<ScheduleGroup[]> => {
-    if (!APPWRITE_CONFIG.COLLECTIONS.GROUPS) return [{ id: 'default', name: 'GENERAL' }];
-    const docs = await AppwriteService.listDocuments<ScheduleGroup>(APPWRITE_CONFIG.COLLECTIONS.GROUPS);
-    if (docs.length === 0) return [{ id: 'default', name: 'GENERAL' }];
-    return docs;
+    const defaultGroup = { id: 'default', name: 'GENERAL' };
+    if (!APPWRITE_CONFIG.COLLECTIONS.GROUPS) return [defaultGroup];
+
+    try {
+      const docs = await AppwriteService.listDocuments<ScheduleGroup>(APPWRITE_CONFIG.COLLECTIONS.GROUPS);
+      // Transform and filter to ensure no duplicate default
+      const groups = docs.map((d: any) => ({ id: d.$id, name: d.name }));
+
+      // Always prepend default if not in list (it shouldn't be in DB usually, it's a virtual group)
+      const hasDefault = groups.some(g => g.id === 'default');
+      return hasDefault ? groups : [defaultGroup, ...groups];
+    } catch (e) {
+      console.warn("Failed to fetch groups, using default", e);
+      return [defaultGroup];
+    }
   },
 
   addGroup: async (group: ScheduleGroup) => {
     if (!APPWRITE_CONFIG.COLLECTIONS.GROUPS) return;
-    return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.GROUPS, group, group.id);
+    try {
+      const userId = await AppwriteService.getUserId();
+      const perms = userId
+        ? [Permission.read(Role.user(userId)), Permission.update(Role.user(userId)), Permission.delete(Role.user(userId))]
+        : undefined;
+      return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.GROUPS, group, group.id, perms);
+    } catch (e) {
+      console.warn("Failed to create private group", e);
+    }
   },
 
   deleteGroup: async (groupId: string) => {
@@ -192,7 +216,12 @@ export const StorageService = {
       attachments: JSON.stringify(note.attachments || [])
     };
     try {
-      const created = await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, payload, note.id) as any;
+      const userId = await AppwriteService.getUserId();
+      const perms = userId
+        ? [Permission.read(Role.user(userId)), Permission.update(Role.user(userId)), Permission.delete(Role.user(userId))]
+        : undefined;
+
+      const created = await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.NOTES, payload, note.id, perms) as any;
       if (!created) throw new Error("Create failed");
       return {
         ...created,
@@ -262,7 +291,15 @@ export const StorageService = {
 
   addFolder: async (folder: Folder) => {
     if (!APPWRITE_CONFIG.COLLECTIONS.FOLDERS) return;
-    return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.FOLDERS, folder, folder.id);
+    try {
+      const userId = await AppwriteService.getUserId();
+      const perms = userId
+        ? [Permission.read(Role.user(userId)), Permission.update(Role.user(userId)), Permission.delete(Role.user(userId))]
+        : undefined;
+      return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.FOLDERS, folder, folder.id, perms);
+    } catch (e) {
+      console.warn("Failed to create private folder", e);
+    }
   },
 
   deleteFolder: async (id: string) => {
@@ -273,17 +310,56 @@ export const StorageService = {
   // --- SAVINGS ---
   getSavingsGoals: async (): Promise<SavingsGoal[]> => {
     if (!APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS) return [];
-    return await AppwriteService.listDocuments<SavingsGoal>(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS);
+    const docs = await AppwriteService.listDocuments<SavingsGoal>(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS);
+    // Reverse Map: If frequency is recurring, the 'targetAmount' in DB was actually holding the recurring amount.
+    return docs.map((d: any) => ({
+      ...d,
+      recurringAmount: (d.frequency !== 'manual') ? d.targetAmount : undefined,
+      targetAmount: (d.frequency !== 'manual') ? 0 : d.targetAmount,
+      // Helper defaults for missing columns
+      reminderEnabled: false,
+      reminderTime: '09:00'
+    }));
   },
 
   addSavingsGoal: async (goal: SavingsGoal) => {
     if (!APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS) return;
-    return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS, goal, goal.id);
+
+    // SANITIZE PAYLOAD: Remove fields not in DB schema
+    const safePayload = { ...goal };
+
+    // Map recurringAmount to targetAmount for storage if applicable
+    if (goal.frequency !== 'manual' && goal.recurringAmount) {
+      safePayload.targetAmount = goal.recurringAmount;
+    }
+
+    // Delete non-existent attributes to prevent 400 Error
+    // NOTE: We now expect the user to have these in the Schema.
+    // delete (safePayload as any).recurringAmount;
+    // delete (safePayload as any).reminderTime;
+    // delete (safePayload as any).reminderEnabled;
+
+    const userId = await AppwriteService.getUserId();
+    const perms = userId
+      ? [Permission.read(Role.user(userId)), Permission.update(Role.user(userId)), Permission.delete(Role.user(userId))]
+      : undefined;
+
+    return await AppwriteService.createDocument(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS, safePayload, goal.id, perms);
   },
 
   updateSavingsGoal: async (goal: SavingsGoal) => {
     if (!APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS) return;
-    return await AppwriteService.updateDocument(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS, goal.id, goal);
+
+    // SANITIZE PAYLOAD
+    const safePayload = { ...goal };
+    if (goal.frequency !== 'manual' && goal.recurringAmount) {
+      safePayload.targetAmount = goal.recurringAmount;
+    }
+    // delete (safePayload as any).recurringAmount;
+    // delete (safePayload as any).reminderTime;
+    // delete (safePayload as any).reminderEnabled;
+
+    return await AppwriteService.updateDocument(APPWRITE_CONFIG.COLLECTIONS.SAVINGS_GOALS, goal.id, safePayload);
   },
 
   deleteSavingsGoal: async (id: string) => { // ADDED

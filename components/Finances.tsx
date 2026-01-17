@@ -50,7 +50,7 @@ const Finances: React.FC<FinancesProps> = ({ goals, onAddGoal, onUpdateGoal, onD
         e.preventDefault();
 
         let finalTarget = Number(newGoalTarget);
-        let finalRecurring = undefined;
+        let finalRecurring: number | null = null;
 
         if (newGoalFrequency !== 'manual') {
             finalRecurring = Number(newGoalTarget);

@@ -52,7 +52,14 @@ const Vault: React.FC = () => {
     setNotes([newNote, ...notes]);
     setSelectedNoteId(newNote.id);
 
-    await StorageService.addNote(newNote);
+    try {
+      await StorageService.addNote(newNote);
+    } catch (e: any) {
+      console.error("Failed to create note", e);
+      setNotes(prev => prev.filter(n => n.id !== newNote.id));
+      setSelectedNoteId(null);
+      alert(`Failed to create note: ${e.message}`);
+    }
   };
 
   const debounceRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
@@ -193,21 +200,21 @@ const Vault: React.FC = () => {
                   <h3 className={`font-bold text-sm truncate pr-8 ${note.isPinned ? 'text-accent' : 'text-gray-200'}`}>
                     {note.title || 'Untitled Entry'}
                   </h3>
-                  {note.isPinned && <Pin size={12} className="text-accent shrink-0" />}
-                  {note.isLocked && <Lock size={12} className="text-red-400 shrink-0 ml-2" />}
+                  {note.isPinned && <Pin size={14} className="text-accent shrink-0" />}
+                  {note.isLocked && <Lock size={14} className="text-red-400 shrink-0 ml-2" />}
                 </div>
                 <p className="text-[10px] text-gray-500 font-mono flex items-center gap-2">
                   {new Date(note.updatedAt).toLocaleDateString()}
                   {/* Action Buttons on Hover */}
                   <div className="hidden group-hover:flex items-center gap-2 ml-auto">
                     <button onClick={(e) => togglePin(e, note)} className="hover:text-white transition-colors">
-                      {note.isPinned ? <PinOff size={10} /> : <Pin size={10} />}
+                      {note.isPinned ? <PinOff size={14} /> : <Pin size={14} />}
                     </button>
                     <button onClick={(e) => toggleLock(e, note)} className="hover:text-white transition-colors">
-                      {note.isLocked ? <Unlock size={10} /> : <Lock size={10} />}
+                      {note.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
                     </button>
                     <button onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }} className="hover:text-red-500 transition-colors">
-                      <Trash2 size={10} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </p>
